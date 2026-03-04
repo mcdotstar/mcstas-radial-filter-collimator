@@ -1,513 +1,521 @@
-/*****************************************************************************
+/*******************************************************************************
 *
 * Component: Radial_filter_collimator
 *
 * %I
 * Written by: Gregory Tucker
 * Date: 2026
-* Version: 0.1.0
 * Origin: European Spallation Source ERIC
+* Version: 0.1.0
 *
+* (TODO - add a one-line description)
 *
 * %D
 * Combination of a radial collimator and a filter, like used on BIFROST
 * utilizing the NCrystal library for accurate filter physics.
-*
 * The geometrical layout of the volume is determined via the xwidth, yheight,
 * zdepth, and radius parameters, and the material being modelled is determined
 * via an NCrystal configuration string ("cfg-string").
-*
 * For more information about NCrystal and cfg-strings, refer to the <a href="https://github.com/mctools/ncrystal/wiki">NCrystal wiki</a>.
 * In particular, browse the available datafiles at <a href="https://github.com/mctools/ncrystal/wiki/Data-library">Data-library</a> and read about the
 * format of the cfg-string expected in the "cfg" parameter at <a href="https://github.com/mctools/ncrystal/wiki/Using-NCrystal">Using-NCrystal</a>.
-*
 * Note that the physics backend of this component will be whichever NCrystal
 * installation is available and associated with the "ncrystal-config" command.
 *
 * %P
-* Input parameters:
-* cfg:                        [str] NCrystal material configuration string, default to Beryllium at 77K (Be_sg194.ncmat;temp=77K)
-* absorptionmode:             [0|1|2] 0 : disable absorption. 1 : enable absorption via intensity reduction. 2 : enable absorption by terminating the tracking.
-* multscat:                   [0|1]   0 : disable multiple scattering. 1 : enable multiple scattering
-* angle_minimum:              [deg] minimum angle of the device in x-z plane (0 along z-axis)
-* angle_maximum:              [deg] maximum angle of the device in x-z plane (0 along z-axis)
-* angle_width:                [deg] angular width of the device in x-z plane (if angle_minimum and angle_maximum are not set, they will be set to -angle_width/2 and +angle_width/2, respectively)
-* y_minimum:                  [m]   minimum y-value of the device 
-* y_maximum:                  [m]   maximum y-value of the device
-* yheight:                    [m]   y-dimension (height) of the device, used to set y_minimum and y_maximum if those are not set, default 0
-* collimator_minimum_radius:  [m]   radius where the collimator channels start (i.e. the inner radius of the collimator)
-* collimator_maximum_radius:  [m]   radius where the collimator channels end (i.e. the outer radius of the collimator)
-* filter_minimum_radius:      [m]   radius where the filter starts (i.e. the inner radius of the filter)
-* filter_maximum_radius:      [m]   radius where the filter ends (i.e. the outer radius of the filter)
-* minimum_radius:             [m]   replaces minimum filter and collimator radius if those are UNSET, default 0
-* maximum_radius:             [m]   replaces maximum filter and collimator radius if those are UNSET, default 0
-* collimation:                [deg] angular width of the collimator channels
+* INPUT PARAMETERS:
 *
-* %L
+* cfg                      : [str]    NCrystal material configuration string, default to Beryllium at 77K (Be_sg194.ncmat;temp=77K)
+* absorptionmode           : [0|1|2]  0 : disable absorption. 1 : enable absorption via intensity reduction. 2 : enable absorption by terminating the tracking.
+* multscat                 : [0|1]    0 : disable multiple scattering. 1 : enable multiple scattering
+* angle_minimum            : [deg]    minimum angle of the device in x-z plane (0 along z-axis)
+* angle_maximum            : [deg]    maximum angle of the device in x-z plane (0 along z-axis)
+* angle_width              : [deg]    angular width of the device in x-z plane (if angle_minimum and angle_maximum are not set, they will be set to -angle_width/2 and +angle_width/2, respectively)
+* y_minimum                : [m]      minimum y-value of the device
+* y_maximum                : [m]      maximum y-value of the device
+* yheight                  : [m]      y-dimension (height) of the device, used to set y_minimum and y_maximum if those are not set, default 0
+* collimator_minimum_radius: [m]      radius where the collimator channels start (i.e. the inner radius of the collimator)
+* collimator_maximum_radius: [m]      radius where the collimator channels end (i.e. the outer radius of the collimator)
+* filter_minimum_radius    : [m]      radius where the filter starts (i.e. the inner radius of the filter)
+* filter_maximum_radius    : [m]      radius where the filter ends (i.e. the outer radius of the filter)
+* minimum_radius           : [m]      replaces minimum filter and collimator radius if those are UNSET, default 0
+* maximum_radius           : [m]      replaces maximum filter and collimator radius if those are UNSET, default 0
+* collimation              : [deg]    angular width of the collimator channels
 *
 * %E
 *******************************************************************************/
-
 DEFINE COMPONENT Radial_filter_collimator
-SETTING PARAMETERS (
-  string cfg="Be_sg194.ncmat;temp=77K", 
-  absorptionmode=1, 
-  multscat=1,
-  angle_minimum=UNSET,
-  angle_maximum=UNSET,
-  angle_width=0,
-  y_minimum=UNSET,
-  y_maximum=UNSET,
-  yheight=0, 
-  collimator_minimum_radius=UNSET,
-  collimator_maximum_radius=UNSET,
-  filter_minimum_radius=UNSET,
-  filter_maximum_radius=UNSET,
-  minimum_radius=0,
-  maximum_radius=0,
-  collimation=0
-)
+SETTING PARAMETERS (string cfg="Be_sg194.ncmat;temp=77K", absorptionmode=1, multscat=1, angle_minimum=UNSET, angle_maximum=UNSET, angle_width=0, y_minimum=UNSET, y_maximum=UNSET, yheight=0, collimator_minimum_radius=UNSET, collimator_maximum_radius=UNSET, filter_minimum_radius=UNSET, filter_maximum_radius=UNSET, minimum_radius=0, maximum_radius=0, collimation=0)
 DEPENDENCY "@NCRYSTALFLAGS@"
 NOACC
 
 SHARE
 %{
-  /* common includes, defines, functions, etc. shared by all instances of this component */
-  #ifndef WIN32
+/* common includes, defines, functions, etc. shared by all instances of this component */
+#ifndef WIN32
   #include "NCrystal/ncrystal.h"
-  #else
+#else
   #include "NCrystal\\ncrystal.h"
-  #endif
-  #include "stdio.h"
-  #include "stdlib.h"
-  #ifndef NCMCERR2
+#endif
+#include "stdio.h"
+#include "stdlib.h"
+#ifndef NCMCERR2
   /* consistent/convenient error reporting */
-  #  define NCMCERR2(compname,msg) do { fprintf(stderr, "\nNCrystal: %s: ERROR: %s\n\n", compname, msg); exit(1); } while (0)
-  #endif
+  #define NCMCERR2(compname, msg)                                                                                                                              \
+    do {                                                                                                                                                       \
+      fprintf (stderr, "\nNCrystal: %s: ERROR: %s\n\n", compname, msg);                                                                                        \
+      exit (1);                                                                                                                                                \
+    } while (0)
+#endif
 
-  static int ncsample_reported_version = 0;
+static int ncsample_reported_version = 0;
 
-  // Keep all instance-specific parameters on a few structs:
-  typedef struct {
-    double density_factor;
-    double inv_density_factor;
-    ncrystal_scatter_t scat;
-    ncrystal_process_t proc_scat, proc_abs;
-    int proc_scat_isoriented;
-    int absmode;
-    double y_min;
-    double y_max;
-    double ang_min; // minimum angle of the device in x-z plane (0 along z-axis) [rad]
-    double ang_max; // maximum angle of the device in x-z plane (0 along z-axis) [rad]
-    double col_min; // minimum collimator radius (don't reuse parameter names to avoid macro issues)
-    double col_max; // maximum collimator radius 
-    double fil_min; // minimum filter radius 
-    double fil_max; // maximum filter radius
-    double col_ang; // collimation angle in radians
-    double col_min2; // minimum collimator radius^2
-    double col_max2; // maximum collimator radius^2
-    double fil_min2; // minimum filter radius^2 
-    double fil_max2; // maximum filter radius^2
-  } radial_filter_collimator_t;
+// Keep all instance-specific parameters on a few structs:
+typedef struct {
+  double density_factor;
+  double inv_density_factor;
+  ncrystal_scatter_t scat;
+  ncrystal_process_t proc_scat, proc_abs;
+  int proc_scat_isoriented;
+  int absmode;
+  double y_min;
+  double y_max;
+  double ang_min;  // minimum angle of the device in x-z plane (0 along z-axis) [rad]
+  double ang_max;  // maximum angle of the device in x-z plane (0 along z-axis) [rad]
+  double col_min;  // minimum collimator radius (don't reuse parameter names to avoid macro issues)
+  double col_max;  // maximum collimator radius
+  double fil_min;  // minimum filter radius
+  double fil_max;  // maximum filter radius
+  double col_ang;  // collimation angle in radians
+  double col_min2; // minimum collimator radius^2
+  double col_max2; // maximum collimator radius^2
+  double fil_min2; // minimum filter radius^2
+  double fil_max2; // maximum filter radius^2
+} radial_filter_collimator_t;
 
-  double radial_filter_collimator_angle_at(double x, double z, double vx, double vz, double t){
-    double x_at = x + vx * t;
-    double z_at = z + vz * t;
-    return atan2 (x_at, z_at);
+double
+radial_filter_collimator_angle_at (double x, double z, double vx, double vz, double t) {
+  double x_at = x + vx * t;
+  double z_at = z + vz * t;
+  return atan2 (x_at, z_at);
+}
+
+double
+radial_filter_collimator_line_line_intersection (double x1, double z1, double vx1, double vz1, double x2, double z2, double vx2, double vz2) {
+  // Returns the parameter t at which the line (x1,z1)+t*(vx1,vz1) intersects with the line (x2,z2)+s*(vx2,vz2). Returns +/-DBL_MAX if lines are parallel.
+  double det = vx1 * vz2 - vz1 * vx2;
+  if (fabs (det) < 1e-12)
+    return (vx1 * vx2 + vz1 * vz2 > 0 ? DBL_MAX : -DBL_MAX); // lines are parallel
+  double t = ((x2 - x1) * vz2 - (z2 - z1) * vx2) / det;
+  return t;
+}
+
+int
+radial_filter_collimator_wedge_intersect (double ang_min, double ang_max, double r_min2, double r_max2, double y_min, double y_max, double* t0, double* t1,
+                                          double x, double y, double z, double vx, double vy, double vz) {
+  // Check when the neutron will be within the angular sector defined by ang_min and ang_max, no negative times:
+  double t_angle_min = fmax (0, radial_filter_collimator_line_line_intersection (x, z, vx, vz, 0, 0, sin (ang_min), cos (ang_min)));
+  double t_angle_max = fmax (0, radial_filter_collimator_line_line_intersection (x, z, vx, vz, 0, 0, sin (ang_max), cos (ang_max)));
+  // Envelop of future times when the neutron is within the angular sector defined by ang_min and ang_max.
+  double t_min = fmin (t_angle_min, t_angle_max);
+  double t_max = fmax (t_angle_min, t_angle_max);
+
+  // Check when the neutron intersects with the outer radius of the filter (which is the only intersection if the neutron misses the inner radius):
+  double r2 = x * x + z * z;
+  double a = vx * vx + vz * vz;
+  double b = 2 * (x * vx + z * vz);
+  double c = r2 - r_max2;
+  double discriminant = b * b - 4 * a * c;
+  if (discriminant < 0)
+    return 0; // no intersection
+  double sqrt_disc = sqrt (discriminant);
+  double t_enter = (-b - sqrt_disc) / (2 * a);
+  double t_exit = (-b + sqrt_disc) / (2 * a);
+  if (t_enter > t_exit) {
+    double temp = t_enter;
+    t_enter = t_exit;
+    t_exit = temp;
+  }
+  if (t_exit < 0)
+    return 0; // both intersections are behind the neutron
+  // Now check if the neutron is within the angular sector at the intersection points, and if not, move the intersection points to the angles if they are within
+  // the radii at those points:
+  if (t_min > t_enter && t_min < t_exit) {
+    double r2_at_min = (x + vx * t_min) * (x + vx * t_min) + (z + vz * t_min) * (z + vz * t_min);
+    if (r2_at_min < r_max2 && r2_at_min > r_min2) {
+      // the neutron enters the filter at t_min instead of t_enter
+      t_enter = t_min;
+    }
+  }
+  if (t_max > t_enter && t_max < t_exit) {
+    double r2_at_max = (x + vx * t_max) * (x + vx * t_max) + (z + vz * t_max) * (z + vz * t_max);
+    if (r2_at_max < r_max2 && r2_at_max > r_min2) {
+      // the neutron exits the filter at t_max instead of t_exit
+      t_exit = t_max;
+    }
   }
 
-  double radial_filter_collimator_line_line_intersection(double x1, double z1, double vx1, double vz1, double x2, double z2, double vx2, double vz2){
-    // Returns the parameter t at which the line (x1,z1)+t*(vx1,vz1) intersects with the line (x2,z2)+s*(vx2,vz2). Returns +/-DBL_MAX if lines are parallel.
-    double det = vx1 * vz2 - vz1 * vx2;
-    if (fabs(det) < 1e-12)
-      return (vx1 * vx2 + vz1 * vz2 > 0 ? DBL_MAX : -DBL_MAX); // lines are parallel
-    double t = ((x2 - x1) * vz2 - (z2 - z1) * vx2) / det;
-    return t;
+  c = r2 - r_min2;
+  discriminant = b * b - 4 * a * c;
+  if (discriminant >= 0) {
+    // Intersection with the inner radius of the filter exists, so we need to check if it is between the two intersections with the outer radius:
+    sqrt_disc = sqrt (discriminant);
+    double t_inner1 = (-b - sqrt_disc) / (2 * a);
+    double t_inner2 = (-b + sqrt_disc) / (2 * a);
+    if (t_inner1 > t_inner2) {
+      double temp = t_inner1;
+      t_inner1 = t_inner2;
+      t_inner2 = temp;
+    }
+    if (t_inner1 > t_enter && t_inner1 < t_exit) {
+      t_enter = t_inner1; // the neutron enters the filter at t_inner1 instead of t_enter
+    } else if (t_inner2 > t_enter && t_inner2 < t_exit) {
+      t_exit = t_inner2; // the neutron exits the filter at t_inner2 instead of t_exit
+    }
   }
 
-  int radial_filter_collimator_wedge_intersect(double ang_min, double ang_max, double r_min2, double r_max2, double y_min, double y_max, double* t0, double* t1, double x, double y, double z, double vx, double vy, double vz) {
-    // Check when the neutron will be within the angular sector defined by ang_min and ang_max, no negative times:
-    double t_angle_min = fmax(0, radial_filter_collimator_line_line_intersection(x, z, vx, vz, 0, 0, sin(ang_min), cos(ang_min)));
-    double t_angle_max = fmax(0, radial_filter_collimator_line_line_intersection(x, z, vx, vz, 0, 0, sin(ang_max), cos(ang_max)));
-    // Envelop of future times when the neutron is within the angular sector defined by ang_min and ang_max.
-    double t_min = fmin(t_angle_min, t_angle_max);
-    double t_max = fmax(t_angle_min, t_angle_max);
+  if (t_exit < t_min || t_enter > t_max)
+    return 0; // the neutron is never within the angular sector when it is within the filter radii
 
-    // Check when the neutron intersects with the outer radius of the filter (which is the only intersection if the neutron misses the inner radius):
-    double r2 = x*x + z*z;
-    double a = vx*vx + vz*vz;
-    double b = 2*(x*vx + z*vz);
-    double c = r2 - r_max2;
-    double discriminant = b*b - 4*a*c;
-    if (discriminant < 0)      return 0; // no intersection
-    double sqrt_disc = sqrt(discriminant);
-    double t_enter = (-b - sqrt_disc) / (2*a);
-    double t_exit = (-b + sqrt_disc) / (2*a);
-    if (t_enter > t_exit) { double temp = t_enter; t_enter = t_exit; t_exit = temp; }
-    if (t_exit < 0)          return 0; // both intersections are behind the neutron
-    // Now check if the neutron is within the angular sector at the intersection points, and if not, move the intersection points to the angles if they are within the radii at those points:    
-    if (t_min > t_enter && t_min < t_exit) {
-      double r2_at_min = (x + vx * t_min)*(x + vx * t_min) + (z + vz * t_min)*(z + vz * t_min);
-      if (r2_at_min < r_max2 && r2_at_min > r_min2) {
-        // the neutron enters the filter at t_min instead of t_enter
-        t_enter = t_min;
-      }
-    }
-    if (t_max > t_enter && t_max < t_exit) {
-      double r2_at_max = (x + vx * t_max)*(x + vx * t_max) + (z + vz * t_max)*(z + vz * t_max);
-      if (r2_at_max < r_max2 && r2_at_max > r_min2) {
-        // the neutron exits the filter at t_max instead of t_exit
-        t_exit = t_max;
-      }
-    }
-
-    c = r2 - r_min2;
-    discriminant = b*b - 4*a*c;
-    if (discriminant >= 0){
-      // Intersection with the inner radius of the filter exists, so we need to check if it is between the two intersections with the outer radius:
-      sqrt_disc = sqrt(discriminant);
-      double t_inner1 = (-b - sqrt_disc) / (2*a);
-      double t_inner2 = (-b + sqrt_disc) / (2*a);
-      if (t_inner1 > t_inner2) { double temp = t_inner1; t_inner1 = t_inner2; t_inner2 = temp; }
-      if (t_inner1 > t_enter && t_inner1 < t_exit) {
-        t_enter = t_inner1; // the neutron enters the filter at t_inner1 instead of t_enter
-      } else if (t_inner2 > t_enter && t_inner2 < t_exit) {
-        t_exit = t_inner2; // the neutron exits the filter at t_inner2 instead of t_exit
-      }
-    }
-
-    if (t_exit < t_min || t_enter > t_max)
-      return 0; // the neutron is never within the angular sector when it is within the filter radii
-
-    double t_y_min = (y_min - y) / vy;
-    double t_y_max = (y_max - y) / vy;
-    if (t_y_min > t_y_max) { double temp = t_y_min; t_y_min = t_y_max; t_y_max = temp; }
-    if (t_y_max < t_enter || t_y_min > t_exit)
-      return 0; // the neutron is never within the y-range of the device when it is within the filter radii and angular sector
-    if (t_y_min > t_enter && t_y_min < t_exit) {
-      t_enter = t_y_min; // the neutron enters the device at t_y_min instead of t_enter
-    }
-    if (t_y_max > t_enter && t_y_max < t_exit) {
-      t_exit = t_y_max; // the neutron exits the device at t_y_max instead of t_exit
-    }
-
-    *t0 = t_enter;
-    *t1 = t_exit;
-    return 1; // intersection exists
+  double t_y_min = (y_min - y) / vy;
+  double t_y_max = (y_max - y) / vy;
+  if (t_y_min > t_y_max) {
+    double temp = t_y_min;
+    t_y_min = t_y_max;
+    t_y_max = temp;
+  }
+  if (t_y_max < t_enter || t_y_min > t_exit)
+    return 0; // the neutron is never within the y-range of the device when it is within the filter radii and angular sector
+  if (t_y_min > t_enter && t_y_min < t_exit) {
+    t_enter = t_y_min; // the neutron enters the device at t_y_min instead of t_enter
+  }
+  if (t_y_max > t_enter && t_y_max < t_exit) {
+    t_exit = t_y_max; // the neutron exits the device at t_y_max instead of t_exit
   }
 
-  int radial_filter_collimator_intersect_filter(radial_filter_collimator_t* rfc_data, double* t0, double* t1, double x, double y, double z, double vx, double vy, double vz) {
-    return radial_filter_collimator_wedge_intersect(rfc_data->ang_min, rfc_data->ang_max, rfc_data->fil_min2, rfc_data->fil_max2, rfc_data->y_min, rfc_data->y_max, t0, t1, x, y, z, vx, vy, vz);
-  }
+  *t0 = t_enter;
+  *t1 = t_exit;
+  return 1; // intersection exists
+}
 
-  int radial_filter_collimator_intersect_collimator(radial_filter_collimator_t* rfc_data, double* t_int, double x, double y, double z, double vx, double vy, double vz) {
-    // first check for intersection with the envelope of the collimator
-    double t0, t1;
-    if (radial_filter_collimator_wedge_intersect(rfc_data->ang_min, rfc_data->ang_max, rfc_data->col_min2, rfc_data->col_max2, rfc_data->y_min, rfc_data->y_max, &t0, &t1, x, y, z, vx, vy, vz)){
-      // then, check if the neutron intersect with any of the collimating vanes while inside the envelope
-      // If it isn't in the same sector at t0 and t1 then it must intersect with a vane
-      // plus we know t0<t1, so we can just check the angle at t0 and t1 to determine which vane it intersects with and where:
-      int t0_sector = floor((radial_filter_collimator_angle_at(x, z, vx, vz, t0) - rfc_data->ang_min) / rfc_data->col_ang);
-      int t1_sector = floor((radial_filter_collimator_angle_at(x, z, vx, vz, t1) - rfc_data->ang_min) / rfc_data->col_ang);
-      if (t0_sector != t1_sector) {
-        // the neutron intersects with a vane, so we need to find the intersection point with the vane and move t0 or t1 to that point:
-        double vane_ang = rfc_data->ang_min + (t0_sector > t1_sector ? t0_sector + 1 : t0_sector - 1) * rfc_data->col_ang ;
-        *t_int = radial_filter_collimator_line_line_intersection(x, z, vx, vz, 0, 0, sin(vane_ang), cos(vane_ang));
-        return 1; // intersection with the collimator exists
-      }
+int
+radial_filter_collimator_intersect_filter (radial_filter_collimator_t* rfc_data, double* t0, double* t1, double x, double y, double z, double vx, double vy,
+                                           double vz) {
+  return radial_filter_collimator_wedge_intersect (rfc_data->ang_min, rfc_data->ang_max, rfc_data->fil_min2, rfc_data->fil_max2, rfc_data->y_min,
+                                                   rfc_data->y_max, t0, t1, x, y, z, vx, vy, vz);
+}
+
+int
+radial_filter_collimator_intersect_collimator (radial_filter_collimator_t* rfc_data, double* t_int, double x, double y, double z, double vx, double vy,
+                                               double vz) {
+  // first check for intersection with the envelope of the collimator
+  double t0, t1;
+  if (radial_filter_collimator_wedge_intersect (rfc_data->ang_min, rfc_data->ang_max, rfc_data->col_min2, rfc_data->col_max2, rfc_data->y_min, rfc_data->y_max,
+                                                &t0, &t1, x, y, z, vx, vy, vz)) {
+    // then, check if the neutron intersect with any of the collimating vanes while inside the envelope
+    // If it isn't in the same sector at t0 and t1 then it must intersect with a vane
+    // plus we know t0<t1, so we can just check the angle at t0 and t1 to determine which vane it intersects with and where:
+    int t0_sector = floor ((radial_filter_collimator_angle_at (x, z, vx, vz, t0) - rfc_data->ang_min) / rfc_data->col_ang);
+    int t1_sector = floor ((radial_filter_collimator_angle_at (x, z, vx, vz, t1) - rfc_data->ang_min) / rfc_data->col_ang);
+    if (t0_sector != t1_sector) {
+      // the neutron intersects with a vane, so we need to find the intersection point with the vane and move t0 or t1 to that point:
+      double vane_ang = rfc_data->ang_min + (t0_sector > t1_sector ? t0_sector + 1 : t0_sector - 1) * rfc_data->col_ang;
+      *t_int = radial_filter_collimator_line_line_intersection (x, z, vx, vz, 0, 0, sin (vane_ang), cos (vane_ang));
+      return 1; // intersection with the collimator exists
     }
-    *t_int = DBL_MAX; // without an intersection the time "of intersection" is infinite
-    return 0; // no intersection with the collimator
   }
+  *t_int = DBL_MAX; // without an intersection the time "of intersection" is infinite
+  return 0;         // no intersection with the collimator
+}
 
-
-  #ifndef NCMCERR
+#ifndef NCMCERR
   /* more convenient form (only works in TRACE section, not in SHARE functions) */
-  #  define NCMCERR(msg) NCMCERR2(NAME_CURRENT_COMP,msg)
-  #endif
+  #define NCMCERR(msg) NCMCERR2 (NAME_CURRENT_COMP, msg)
+#endif
 %}
 
 DECLARE
 %{
-  radial_filter_collimator_t params;
-  double ncrystal_convfact_vsq2ekin;
-  double ncrystal_convfact_ekin2vsq;
+radial_filter_collimator_t params;
+double ncrystal_convfact_vsq2ekin;
+double ncrystal_convfact_ekin2vsq;
 %}
 
 INITIALIZE
 %{
-  // Duplicate the NCrystal_sample initialization:
+// Duplicate the NCrystal_sample initialization:
 
-  // Print NCrystal version + sanity check setup.
-  if (NCRYSTAL_VERSION != ncrystal_version ()) {
-    NCMCERR ("Inconsistency detected between included ncrystal.h and linked NCrystal library!");
+// Print NCrystal version + sanity check setup.
+if (NCRYSTAL_VERSION != ncrystal_version ()) {
+  NCMCERR ("Inconsistency detected between included ncrystal.h and linked NCrystal library!");
+}
+if (ncsample_reported_version != ncrystal_version ()) {
+  if (ncsample_reported_version) {
+    NCMCERR ("Inconsistent NCrystal library versions detected - this should normally not be possible!");
   }
-  if (ncsample_reported_version != ncrystal_version ()) {
-    if (ncsample_reported_version) {
-      NCMCERR ("Inconsistent NCrystal library versions detected - this should normally not be possible!");
-    }
-    ncsample_reported_version = ncrystal_version ();
-    MPI_MASTER (printf ("NCrystal: McStas sample component(s) are using version %s of the NCrystal library.\n", ncrystal_version_str ()););
-  }
+  ncsample_reported_version = ncrystal_version ();
+  MPI_MASTER (printf ("NCrystal: McStas sample component(s) are using version %s of the NCrystal library.\n", ncrystal_version_str ()););
+}
 
-  // The following conversion factors might look slightly odd. They reflect the
-  // fact that the various conversion factors used in McStas and NCrystal are not
-  // completely consistent among each other (TODO: Follow up on this with McStas
-  // developers!). Also McStas's V2K*K2V is not exactly 1. All in all, this can
-  // give issues when a McStas user is trying to set up a narrow beam very
-  // precisely in an instrument file, attempting to carefully hit a certain
-  // narrow Bragg reflection in this NCrystal component. We can not completely
-  // work around all issues here, but for now, we assume that the user is
-  // carefully setting up things by specifying the wavelength to some source
-  // component. That wavelength is then converted to the McStas state pars
-  //(vx,vy,vz) via K2V. We thus here first use 1/K2V (and *not* V2K) to convert
-  // back to a wavelength, and then we use NCrystal's conversion constants to
-  // convert the resulting wavelength to kinetic energy needed for NCrystal's
-  // interfaces.
+// The following conversion factors might look slightly odd. They reflect the
+// fact that the various conversion factors used in McStas and NCrystal are not
+// completely consistent among each other (TODO: Follow up on this with McStas
+// developers!). Also McStas's V2K*K2V is not exactly 1. All in all, this can
+// give issues when a McStas user is trying to set up a narrow beam very
+// precisely in an instrument file, attempting to carefully hit a certain
+// narrow Bragg reflection in this NCrystal component. We can not completely
+// work around all issues here, but for now, we assume that the user is
+// carefully setting up things by specifying the wavelength to some source
+// component. That wavelength is then converted to the McStas state pars
+//(vx,vy,vz) via K2V. We thus here first use 1/K2V (and *not* V2K) to convert
+// back to a wavelength, and then we use NCrystal's conversion constants to
+// convert the resulting wavelength to kinetic energy needed for NCrystal's
+// interfaces.
 
-  // 0.0253302959105844428609698658024319097260896937 is 1/(4*pi^2)
-  ncrystal_convfact_vsq2ekin = ncrystal_wl2ekin (1.0) * 0.0253302959105844428609698658024319097260896937 / (K2V * K2V);
-  ncrystal_convfact_ekin2vsq = 1.0 / ncrystal_convfact_vsq2ekin;
+// 0.0253302959105844428609698658024319097260896937 is 1/(4*pi^2)
+ncrystal_convfact_vsq2ekin = ncrystal_wl2ekin (1.0) * 0.0253302959105844428609698658024319097260896937 / (K2V * K2V);
+ncrystal_convfact_ekin2vsq = 1.0 / ncrystal_convfact_vsq2ekin;
 
-  // for our sanity, zero-initialise all instance-specific data:
-  memset (&params, 0, sizeof (params));
+// for our sanity, zero-initialise all instance-specific data:
+memset (&params, 0, sizeof (params));
 
-  // parse geometry parameters:
-  params.y_min = is_set(y_minimum) ? y_minimum : (is_set(yheight) ? -yheight/2.0 : 0);
-  params.y_max = is_set(y_maximum) ? y_maximum : (is_set(yheight) ? yheight/2.0 : 0);
-  params.ang_min = is_set(angle_minimum) ? angle_minimum * DEG2RAD : -(angle_width/2.0) * DEG2RAD;
-  params.ang_max = is_set(angle_maximum) ? angle_maximum * DEG2RAD : (angle_width/2.0) * DEG2RAD;
-  params.col_min = is_set(collimator_minimum_radius) ? collimator_minimum_radius : (is_set(minimum_radius) ? minimum_radius : 0);
-  params.col_max = is_set(collimator_maximum_radius) ? collimator_maximum_radius : (is_set(maximum_radius) ? maximum_radius : 0);
-  params.fil_min = is_set(filter_minimum_radius) ? filter_minimum_radius : (is_set(minimum_radius) ? minimum_radius : 0);
-  params.fil_max = is_set(filter_maximum_radius) ? filter_maximum_radius : (is_set(maximum_radius) ? maximum_radius : 0);
-  params.col_ang = collimation * DEG2RAD;
-  params.col_min2 = params.col_min * params.col_min;
-  params.col_max2 = params.col_max * params.col_max;
-  params.fil_min2 = params.fil_min * params.fil_min;
-  params.fil_max2 = params.fil_max * params.fil_max;
+// parse geometry parameters:
+params.y_min = is_set (y_minimum) ? y_minimum : (is_set (yheight) ? -yheight / 2.0 : 0);
+params.y_max = is_set (y_maximum) ? y_maximum : (is_set (yheight) ? yheight / 2.0 : 0);
+params.ang_min = is_set (angle_minimum) ? angle_minimum * DEG2RAD : -(angle_width / 2.0) * DEG2RAD;
+params.ang_max = is_set (angle_maximum) ? angle_maximum * DEG2RAD : (angle_width / 2.0) * DEG2RAD;
+params.col_min = is_set (collimator_minimum_radius) ? collimator_minimum_radius : (is_set (minimum_radius) ? minimum_radius : 0);
+params.col_max = is_set (collimator_maximum_radius) ? collimator_maximum_radius : (is_set (maximum_radius) ? maximum_radius : 0);
+params.fil_min = is_set (filter_minimum_radius) ? filter_minimum_radius : (is_set (minimum_radius) ? minimum_radius : 0);
+params.fil_max = is_set (filter_maximum_radius) ? filter_maximum_radius : (is_set (maximum_radius) ? maximum_radius : 0);
+params.col_ang = collimation * DEG2RAD;
+params.col_min2 = params.col_min * params.col_min;
+params.col_max2 = params.col_max * params.col_max;
+params.fil_min2 = params.fil_min * params.fil_min;
+params.fil_max2 = params.fil_max * params.fil_max;
 
-  if (!(absorptionmode == 0 || absorptionmode == 1 || absorptionmode == 2))
-    NCMCERR ("Invalid value of absorptionmode");
-  params.absmode = absorptionmode;
+if (!(absorptionmode == 0 || absorptionmode == 1 || absorptionmode == 2))
+  NCMCERR ("Invalid value of absorptionmode");
+params.absmode = absorptionmode;
 
-  #ifndef rand01
-  /* Tell NCrystal to use the rand01 function provided by McStas: */
-  ncrystal_setrandgen (rand01);
-  #else
-  /* rand01 is actually a macro not an actual C-function (most likely defined as */
-  /* _rand01(_particle->randstate) for OPENACC purposes), which we can not       */
-  /* register with NCrystal. As a workaround we tell NCrystal to use its own RNG */
-  /* algorithm, with merely the seed provided by McStas:                         */
-  ncrystal_setbuiltinrandgen_withseed (mcseed);
-  #endif
+#ifndef rand01
+/* Tell NCrystal to use the rand01 function provided by McStas: */
+ncrystal_setrandgen (rand01);
+#else
+/* rand01 is actually a macro not an actual C-function (most likely defined as */
+/* _rand01(_particle->randstate) for OPENACC purposes), which we can not       */
+/* register with NCrystal. As a workaround we tell NCrystal to use its own RNG */
+/* algorithm, with merely the seed provided by McStas:                         */
+ncrystal_setbuiltinrandgen_withseed (mcseed);
+#endif
 
-  /* access material info to get number density (natoms/volume): */
-  ncrystal_info_t info = ncrystal_create_info (cfg);
-  double numberdensity = ncrystal_info_getnumberdensity (info);
-  ncrystal_unref (&info);
+/* access material info to get number density (natoms/volume): */
+ncrystal_info_t info = ncrystal_create_info (cfg);
+double numberdensity = ncrystal_info_getnumberdensity (info);
+ncrystal_unref (&info);
 
-  // numberdensity is the atomic number density in units of Aa^-3=1e30m^3, and
-  // given that we have cross-sections in barn (1e-28m^2) and want to generate
-  // distances in meters with -log(R)/(numberdensity*xsect), we get the unit
-  // conversion factor of 0.01:
-  params.density_factor = -0.01 / numberdensity;
-  params.inv_density_factor = -100.0 * numberdensity;
+// numberdensity is the atomic number density in units of Aa^-3=1e30m^3, and
+// given that we have cross-sections in barn (1e-28m^2) and want to generate
+// distances in meters with -log(R)/(numberdensity*xsect), we get the unit
+// conversion factor of 0.01:
+params.density_factor = -0.01 / numberdensity;
+params.inv_density_factor = -100.0 * numberdensity;
 
-  // Setup scattering:
-  params.scat = ncrystal_create_scatter (cfg);
-  params.proc_scat = ncrystal_cast_scat2proc (params.scat);
-  params.proc_scat_isoriented = !ncrystal_isnonoriented (params.proc_scat);
-  ;
+// Setup scattering:
+params.scat = ncrystal_create_scatter (cfg);
+params.proc_scat = ncrystal_cast_scat2proc (params.scat);
+params.proc_scat_isoriented = !ncrystal_isnonoriented (params.proc_scat);
+;
 
-  // Setup absorption:
-  if (params.absmode) {
-    params.proc_abs = ncrystal_cast_abs2proc (ncrystal_create_absorption (cfg));
-    if (!ncrystal_isnonoriented (params.proc_abs))
-      NCMCERR ("Encountered oriented NCAbsorption process which is not currently supported by this component.");
-  }
+// Setup absorption:
+if (params.absmode) {
+  params.proc_abs = ncrystal_cast_abs2proc (ncrystal_create_absorption (cfg));
+  if (!ncrystal_isnonoriented (params.proc_abs))
+    NCMCERR ("Encountered oriented NCAbsorption process which is not currently supported by this component.");
+}
 %}
 
 TRACE
 %{
-  /* Handle arbitrary incoming neutron with state vector
-     (x,y,z,vx,vy,vz,t,sx,sy,sz,p) */
+/* Handle arbitrary incoming neutron with state vector
+   (x,y,z,vx,vy,vz,t,sx,sy,sz,p) */
 
-  do {
-    /* neutron is outside our surface at this point. First check if it intersects it... */
-    double t0, t1;
-    double t_col;
-    int filter_intersects = radial_filter_collimator_intersect_filter(&params, &t0, &t1, x, y, z, vx, vy, vz);
-    int collimator_intersects = radial_filter_collimator_intersect_collimator(&params, &t_col, x, y, z, vx, vy, vz);
-    if (!filter_intersects && !collimator_intersects){
-      // The neutron misses both the filter and the collimator, so we can just ignore it and move on to the next component
-      break;
-    }
-    if (!filter_intersects){
-      // The neutron misses the filter but intersects with the collimator, so we can just move it to the intersection point and kill it there
-      PROP_DT (t_col); // move to the first intersection with the collimator
-      ABSORB;
-    } else {
-      // The neutron intersects with the filter, so we need to propagate it through the filter and apply scattering and absorption processes until it exits the filter again. 
-      // If it also intersects with the collimator, then we will check for intersection with the collimator vanes at each step inside the filter and kill the neutron if it hits a vane.
+do {
+  /* neutron is outside our surface at this point. First check if it intersects it... */
+  double t0, t1;
+  double t_col;
+  int filter_intersects = radial_filter_collimator_intersect_filter (&params, &t0, &t1, x, y, z, vx, vy, vz);
+  int collimator_intersects = radial_filter_collimator_intersect_collimator (&params, &t_col, x, y, z, vx, vy, vz);
+  if (!filter_intersects && !collimator_intersects) {
+    // The neutron misses both the filter and the collimator, so we can just ignore it and move on to the next component
+    break;
+  }
+  if (!filter_intersects) {
+    // The neutron misses the filter but intersects with the collimator, so we can just move it to the intersection point and kill it there
+    PROP_DT (t_col); // move to the first intersection with the collimator
+    ABSORB;
+  } else {
+    // The neutron intersects with the filter, so we need to propagate it through the filter and apply scattering and absorption processes until it exits the
+    // filter again. If it also intersects with the collimator, then we will check for intersection with the collimator vanes at each step inside the filter and
+    // kill the neutron if it hits a vane.
 
-      /* Propagate the neutron to our surface (t0<=0 means we started inside!) */
-      if (t0 > 0)
-        PROP_DT (t0); /* let the neutron fly in a straight line for t0 */
+    /* Propagate the neutron to our surface (t0<=0 means we started inside!) */
+    if (t0 > 0)
+      PROP_DT (t0); /* let the neutron fly in a straight line for t0 */
 
-      double dir[3], dirout[3];
-      double v2 = vx * vx + vy * vy + vz * vz;
-      double absv = sqrt (v2);
-      double inv_absv = 1.0 / absv;
-      dir[0] = vx * inv_absv;
-      dir[1] = vy * inv_absv;
-      dir[2] = vz * inv_absv;
+    double dir[3], dirout[3];
+    double v2 = vx * vx + vy * vy + vz * vz;
+    double absv = sqrt (v2);
+    double inv_absv = 1.0 / absv;
+    dir[0] = vx * inv_absv;
+    dir[1] = vy * inv_absv;
+    dir[2] = vz * inv_absv;
 
-      double ekin = ncrystal_convfact_vsq2ekin * v2;
-      double xsect_scat = 0.0;
-      double xsect_abs = 0.0;
+    double ekin = ncrystal_convfact_vsq2ekin * v2;
+    double xsect_scat = 0.0;
+    double xsect_abs = 0.0;
 
-      ncrystal_crosssection (params.proc_scat, ekin, (const double (*)[3]) & dir, &xsect_scat);
-      if (params.absmode)
-        ncrystal_crosssection_nonoriented (params.proc_abs, ekin, &xsect_abs);
+    ncrystal_crosssection (params.proc_scat, ekin, (const double (*)[3]) & dir, &xsect_scat);
+    if (params.absmode)
+      ncrystal_crosssection_nonoriented (params.proc_abs, ekin, &xsect_abs);
 
-      while (1) {
-        /* Make the calculations and pick the final state before exiting the sample */
-        double xsect_step = xsect_scat;
-        if (params.absmode == 2)
-          xsect_step += xsect_abs;
-        double distance = xsect_step ? log (rand01 ()) * params.density_factor / xsect_step : DBL_MAX; /* in m */
-        double timestep = distance * inv_absv;
-        /* Test when the neutron would reach the outer surface in absence of interactions: */
+    while (1) {
+      /* Make the calculations and pick the final state before exiting the sample */
+      double xsect_step = xsect_scat;
+      if (params.absmode == 2)
+        xsect_step += xsect_abs;
+      double distance = xsect_step ? log (rand01 ()) * params.density_factor / xsect_step : DBL_MAX; /* in m */
+      double timestep = distance * inv_absv;
+      /* Test when the neutron would reach the outer surface in absence of interactions: */
 
-        filter_intersects = radial_filter_collimator_intersect_filter(&params, &t0, &t1, x, y, z, vx, vy, vz);
-        collimator_intersects = radial_filter_collimator_intersect_collimator(&params, &t_col, x, y, z, vx, vy, vz);
+      filter_intersects = radial_filter_collimator_intersect_filter (&params, &t0, &t1, x, y, z, vx, vy, vz);
+      collimator_intersects = radial_filter_collimator_intersect_collimator (&params, &t_col, x, y, z, vx, vy, vz);
 
-        if (!filter_intersects){
-          // The neutron somehow misses the filter while we are inside it, this should not happen for a convex shape, so we report an error:
-          NCMCERR ("Can not propagate to surface from inside volume!");
+      if (!filter_intersects) {
+        // The neutron somehow misses the filter while we are inside it, this should not happen for a convex shape, so we report an error:
+        NCMCERR ("Can not propagate to surface from inside volume!");
+      }
+
+      if (timestep > t1 && t1 < t_col) {
+        /* neutron reaches surface, move forward to surface and apply intensity reduction if absmode=1 */
+        if (params.absmode == 1)
+          p *= exp (absv * t1 * xsect_abs * params.inv_density_factor);
+        PROP_DT (t1);
+        break; // end stepping inside volume
+      }
+      if (t_col < timestep) {
+        PROP_DT (t_col); // move to the intersection with the collimator vane
+        ABSORB;          // and kill the neutron there
+        break;           // end stepping inside volume
+      }
+
+      /*move neutron forward*/
+      PROP_DT (timestep);
+
+      /* perform reaction */
+      if (params.absmode == 2 && xsect_abs > rand01 () * xsect_step) {
+        /* reaction was full-blooded absorption */
+        ABSORB; /* kill track (uses goto to jump out of current loop context)*/
+      } else if (params.absmode == 1) {
+        /* reaction was scatter and we model absorption by intensity-reduction */
+        p *= exp (distance * xsect_abs * params.inv_density_factor);
+      } else {
+        /* reaction was scatter and we do not perform any intensity-reduction */
+      }
+
+      /* scattering */
+      double ekin_final;
+      ncrystal_samplescatter (params.scat, ekin, (const double (*)[3]) & dir, &ekin_final, &dirout);
+      double delta_ekin = ekin_final - ekin;
+      if (delta_ekin) {
+        ekin = ekin_final;
+        if (ekin <= 0) {
+          // not expected to happen much, but an interaction could in principle bring the neutron to rest.
+          ABSORB;
         }
+        v2 = ncrystal_convfact_ekin2vsq * ekin;
+        absv = sqrt (v2);
+        inv_absv = 1.0 / absv;
+      }
+      vx = dirout[0] * absv;
+      vy = dirout[1] * absv;
+      vz = dirout[2] * absv;
+      dir[0] = dirout[0];
+      dir[1] = dirout[1];
+      dir[2] = dirout[2];
 
-        if (timestep > t1 && t1 < t_col) {
-          /* neutron reaches surface, move forward to surface and apply intensity reduction if absmode=1 */
-          if (params.absmode == 1)
-            p *= exp (absv * t1 * xsect_abs * params.inv_density_factor);
-          PROP_DT (t1);
-          break; // end stepping inside volume
-        }
-        if (t_col < timestep){
-          PROP_DT (t_col); // move to the intersection with the collimator vane
-          ABSORB; // and kill the neutron there
-          break; // end stepping inside volume
-        }
+      SCATTER; /* update mcstas scatter counter and potentially enable trajectory visualisation */
 
-        /*move neutron forward*/
-        PROP_DT (timestep);
+      if (multscat) {
+        // Must update x-sects if energy changed or processes are oriented:
+        if (delta_ekin && params.absmode)
+          ncrystal_crosssection_nonoriented (params.proc_abs, ekin, &xsect_abs);
+        if (delta_ekin || params.proc_scat_isoriented)
+          ncrystal_crosssection (params.proc_scat, ekin, (const double (*)[3]) & dir, &xsect_scat);
+      } else {
+        // Multiple scattering disabled, so we just need to propagate the neutron
+        // out of the sample and (if absmode==1) apply one more intensity
+        // reduction factor. We handle this by putting cross-sections to 0 here,
+        // which will result in an infinife step length of the next step.
+        xsect_scat = 0.0;
+        if (params.absmode != 1)
+          xsect_abs = 0.0;
+      }
+    } /*exited at a surface*/
 
-        /* perform reaction */
-        if (params.absmode == 2 && xsect_abs > rand01 () * xsect_step) {
-          /* reaction was full-blooded absorption */
-          ABSORB; /* kill track (uses goto to jump out of current loop context)*/
-        } else if (params.absmode == 1) {
-          /* reaction was scatter and we model absorption by intensity-reduction */
-          p *= exp (distance * xsect_abs * params.inv_density_factor);
-        } else {
-          /* reaction was scatter and we do not perform any intensity-reduction */
-        }
-
-        /* scattering */
-        double ekin_final;
-        ncrystal_samplescatter (params.scat, ekin, (const double (*)[3]) & dir, &ekin_final, &dirout);
-        double delta_ekin = ekin_final - ekin;
-        if (delta_ekin) {
-          ekin = ekin_final;
-          if (ekin <= 0) {
-            // not expected to happen much, but an interaction could in principle bring the neutron to rest.
-            ABSORB;
-          }
-          v2 = ncrystal_convfact_ekin2vsq * ekin;
-          absv = sqrt (v2);
-          inv_absv = 1.0 / absv;
-        }
-        vx = dirout[0] * absv;
-        vy = dirout[1] * absv;
-        vz = dirout[2] * absv;
-        dir[0] = dirout[0];
-        dir[1] = dirout[1];
-        dir[2] = dirout[2];
-
-        SCATTER; /* update mcstas scatter counter and potentially enable trajectory visualisation */
-
-        if (multscat) {
-          // Must update x-sects if energy changed or processes are oriented:
-          if (delta_ekin && params.absmode)
-            ncrystal_crosssection_nonoriented (params.proc_abs, ekin, &xsect_abs);
-          if (delta_ekin || params.proc_scat_isoriented)
-            ncrystal_crosssection (params.proc_scat, ekin, (const double (*)[3]) & dir, &xsect_scat);
-        } else {
-          // Multiple scattering disabled, so we just need to propagate the neutron
-          // out of the sample and (if absmode==1) apply one more intensity
-          // reduction factor. We handle this by putting cross-sections to 0 here,
-          // which will result in an infinife step length of the next step.
-          xsect_scat = 0.0;
-          if (params.absmode != 1)
-            xsect_abs = 0.0;
-        }
-      } /*exited at a surface*/
-
-      /* Exited the surface. We let the while condition below always be false for  *
-      * now, since we only support convex bodies, so there is no need to check if *
-      * we might be able to enter our shape again:                                */
-    }
-  } while (0);
+    /* Exited the surface. We let the while condition below always be false for  *
+     * now, since we only support convex bodies, so there is no need to check if *
+     * we might be able to enter our shape again:                                */
+  }
+} while (0);
 %}
 
 FINALLY
 %{
-  ncrystal_unref (&params.scat);
-  ncrystal_invalidate (&params.proc_scat); // a cast of params.scat, so just invalidate handle don't unref
-  if (params.absmode)
-    ncrystal_unref (&params.proc_abs);
+ncrystal_unref (&params.scat);
+ncrystal_invalidate (&params.proc_scat); // a cast of params.scat, so just invalidate handle don't unref
+if (params.absmode)
+  ncrystal_unref (&params.proc_abs);
 %}
 
 MCDISPLAY
 %{
-  // display the filter envelope
-  int n_segments = 100;
-  double y1 = params.y_min;
-  double y2 = params.y_max;
-  double ang_step = (params.ang_max - params.ang_min) / n_segments;
-  for (int i = 0; i < n_segments; i++) {
-    double ang1 = params.ang_min + i * ang_step;
-    double ang2 = ang1 + ang_step;
-    double x11 = params.fil_min * sin(ang1);
-    double z11 = params.fil_min * cos(ang1);
-    double x12 = params.fil_max * sin(ang1);
-    double z12 = params.fil_max * cos(ang1);
-    double x21 = params.fil_min * sin(ang2);
-    double z21 = params.fil_min * cos(ang2);
-    double x22 = params.fil_max * sin(ang2);
-    double z22 = params.fil_max * cos(ang2);
-    mcdis_polygon (4, x11, y1, z11, x12, y1, z12, x22, y1, z22, x21, y1, z21);
-    mcdis_polygon (4, x11, y2, z11, x12, y2, z12, x22, y2, z22, x21, y2, z21);
-    mcdis_polygon (4, x11, y1, z11, x11, y2, z11, x21, y2, z21, x21, y1, z21);
-    mcdis_polygon (4, x12, y1, z12, x12, y2, z12, x22, y2, z22, x22, y1, z22);
-    if (i == 0) {
-      mcdis_polygon(4, x11, y1, z11, x12, y1, z12, x12, y2, z12, x11, y2, z11);
-    }
-    if (i == n_segments-1) {
-      mcdis_polygon(4, x21, y1, z21, x22, y1, z22, x22, y2, z22, x21, y2, z21);
-    }
+// display the filter envelope
+int n_segments = 100;
+double y1 = params.y_min;
+double y2 = params.y_max;
+double ang_step = (params.ang_max - params.ang_min) / n_segments;
+for (int i = 0; i < n_segments; i++) {
+  double ang1 = params.ang_min + i * ang_step;
+  double ang2 = ang1 + ang_step;
+  double x11 = params.fil_min * sin (ang1);
+  double z11 = params.fil_min * cos (ang1);
+  double x12 = params.fil_max * sin (ang1);
+  double z12 = params.fil_max * cos (ang1);
+  double x21 = params.fil_min * sin (ang2);
+  double z21 = params.fil_min * cos (ang2);
+  double x22 = params.fil_max * sin (ang2);
+  double z22 = params.fil_max * cos (ang2);
+  mcdis_polygon (4, x11, y1, z11, x12, y1, z12, x22, y1, z22, x21, y1, z21);
+  mcdis_polygon (4, x11, y2, z11, x12, y2, z12, x22, y2, z22, x21, y2, z21);
+  mcdis_polygon (4, x11, y1, z11, x11, y2, z11, x21, y2, z21, x21, y1, z21);
+  mcdis_polygon (4, x12, y1, z12, x12, y2, z12, x22, y2, z22, x22, y1, z22);
+  if (i == 0) {
+    mcdis_polygon (4, x11, y1, z11, x12, y1, z12, x12, y2, z12, x11, y2, z11);
   }
-  // display the collimator blades
-  for (int i = 0; i < 10; i++) {
-    double ang = params.ang_min + i * params.col_ang;
-    double x1 = params.col_min * sin(ang);
-    double z1 = params.col_min * cos(ang);
-    double x2 = params.col_max * sin(ang);
-    double z2 = params.col_max * cos(ang);
-    mcdis_polygon (4, x1, y1, z1, x2, y1, z2, x2, y2, z2, x1, y2, z1);
+  if (i == n_segments - 1) {
+    mcdis_polygon (4, x21, y1, z21, x22, y1, z22, x22, y2, z22, x21, y2, z21);
   }
+}
+// display the collimator blades
+for (int i = 0; i < 10; i++) {
+  double ang = params.ang_min + i * params.col_ang;
+  double x1 = params.col_min * sin (ang);
+  double z1 = params.col_min * cos (ang);
+  double x2 = params.col_max * sin (ang);
+  double z2 = params.col_max * cos (ang);
+  mcdis_polygon (4, x1, y1, z1, x2, y1, z2, x2, y2, z2, x1, y2, z1);
+}
 %}
 
 END
