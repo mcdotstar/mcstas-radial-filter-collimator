@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from textwrap import dedent
 
-from pytest import mark
+from .utilities import compiled, repo_registry, compile_and_run
 
 # ---------------------------------------------------------------------------
 # Inline component: a minimal, fully deterministic neutron source.
@@ -53,29 +53,6 @@ _TRIVIAL_SOURCE_COMP = dedent("""\
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def compiled(method):
-    """Decorator: skip test if no working C compiler is available."""
-    from mccode_antlr.compiler.check import simple_instr_compiles
-    if simple_instr_compiles('cc'):
-        return method
-
-    @mark.skip(reason=f"A working C compiler is required for {method.__name__}")
-    def skipped(*args, **kwargs):
-        pass
-
-    return skipped
-
-
-def repo_registry():
-    """Return a LocalRegistry pointing at the root of this git repository."""
-    from git import Repo, InvalidGitRepositoryError
-    from mccode_antlr.reader.registry import LocalRegistry
-    try:
-        repo = Repo('.', search_parent_directories=True)
-        return LocalRegistry('radial_filter_collimator', repo.working_tree_dir)
-    except InvalidGitRepositoryError as exc:
-        raise RuntimeError(f"Could not locate repository root: {exc}") from exc
 
 
 def _make_registries():
@@ -154,7 +131,7 @@ def test_component_compiles():
     )
 
     instr = assembler.instrument
-    output = _compile_and_run(instr, '--ncount=10 --seed=1')
+    output, _ = compile_and_run(instr, '--ncount=10 --seed=1')
     assert b'rfc_test_start' in output
 
 
@@ -204,7 +181,7 @@ def test_neutron_passes_when_outside_geometry():
     """))
 
     instr = assembler.instrument
-    output = _compile_and_run(instr, '--ncount=1 --seed=1')
+    output, _ = compile_and_run(instr, '--ncount=1 --seed=1')
     text = output.decode(errors='replace')
     assert 'rfc_passthrough_start' in text, (
         f"Sentinel missing from output:\n{text}"
@@ -256,32 +233,10 @@ def test_collimator_blocks_neutrons():
     )
 
     instr = assembler.instrument
-    output = _compile_and_run(instr, '--ncount=1 --seed=1')
+    output, _ = compile_and_run(instr, '--ncount=1 --seed=1')
     text = output.decode(errors='replace')
     assert 'rfc_collimator_start' in text, (
         f"Sentinel missing from output:\n{text}"
     )
 
 
-# ---------------------------------------------------------------------------
-# Compile + run helper
-# ---------------------------------------------------------------------------
-
-def _compile_and_run(instr, parameters: str) -> bytes:
-    """Compile *instr* and run it with the given parameter string.
-
-    Returns combined stdout+stderr bytes from the binary.
-    A RuntimeError is raised by mccode_antlr on compilation or run failure.
-    """
-    from pathlib import Path
-    from tempfile import TemporaryDirectory
-    from mccode_antlr import Flavor
-    from mccode_antlr.run import mccode_compile, mccode_run_compiled
-
-    with TemporaryDirectory() as build_dir:
-        binary, target = mccode_compile(instr, Path(build_dir), flavor=Flavor.MCSTAS)
-        out_dir = Path(build_dir) / 'output'
-        output, _dats = mccode_run_compiled(
-            binary, target, out_dir, parameters, capture=True,
-        )
-    return output
