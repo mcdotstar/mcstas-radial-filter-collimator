@@ -122,44 +122,44 @@ void test_collimator_radial_ray_from_hollow_passes(void)
     rfc_collimator_t c = make_collimator(0.5, 1.5, 0.1);
     _class_particle p = make_p(0.1, 0.0, 0.0, 1000.0, 0.0, 0.0);
     double t = 0.0;
-    TEST_ASSERT_EQUAL_INT(0, rfc_collimator_hit_time(&c, &p, &t));
+    TEST_ASSERT_EQUAL_INT(RFC_STATE_OUTWARD, rfc_collimator_hit_time(&c, &p, &t));
 }
 
 /* Tangential ray entering from hollow: position (0.1, 0, 0), velocity (0, 0, 1000).
  * The +z velocity is tangential at angle π/2.  As the particle moves into
  * the collimator, its angle sweeps downward toward 0 and it crosses a radial
  * vane shortly after entry.
- * Expected: vane hit (return 1). */
+ * Expected: INWARD (vane hit). */
 void test_collimator_tangential_ray_from_hollow_hits(void)
 {
     rfc_collimator_t c = make_collimator(0.5, 1.5, 0.1);
     _class_particle p = make_p(0.1, 0.0, 0.0, 0.0, 0.0, 1000.0);
     double t = 0.0;
-    int hit = rfc_collimator_hit_time(&c, &p, &t);
-    TEST_ASSERT_EQUAL_INT(1, hit);
+    enum rfc_state hit = rfc_collimator_hit_time(&c, &p, &t);
+    TEST_ASSERT_EQUAL_INT(RFC_STATE_INWARD, hit);
     TEST_ASSERT_TRUE(t > 0.0 && t < 1e30);
 }
 
 /* Ray completely missing the collimator (outside r_max, heading away).
- * Expected: return 0, t not updated to a finite value. */
+ * Expected: OUTWARD (no vane hit). */
 void test_collimator_ray_misses_volume_returns_zero(void)
 {
     rfc_collimator_t c = make_collimator(0.5, 1.5, 0.1);
     _class_particle p = make_p(2.0, 0.0, 0.0, 1000.0, 0.0, 0.0);
     double t = 0.0;
-    TEST_ASSERT_EQUAL_INT(0, rfc_collimator_hit_time(&c, &p, &t));
+    TEST_ASSERT_EQUAL_INT(RFC_STATE_OUTWARD, rfc_collimator_hit_time(&c, &p, &t));
 }
 
 /* Particle inside the collimator, moving radially outward (WITHIN):
  * position (0.8, 0, 0), velocity (1000, 0, 0).
  * Angle stays at π/2 → stays in channel 47 → no vane hit.
- * Expected: return 0. */
+ * Expected: OUTWARD. */
 void test_collimator_within_radial_passes(void)
 {
     rfc_collimator_t c = make_collimator(0.5, 1.5, 0.1);
     _class_particle p = make_p(0.8, 0.0, 0.0, 1000.0, 0.0, 0.0);
     double t = 0.0;
-    TEST_ASSERT_EQUAL_INT(0, rfc_collimator_hit_time(&c, &p, &t));
+    TEST_ASSERT_EQUAL_INT(RFC_STATE_OUTWARD, rfc_collimator_hit_time(&c, &p, &t));
 }
 
 /* Particle inside the collimator, moving tangentially (WITHIN):
@@ -170,15 +170,15 @@ void test_collimator_within_radial_passes(void)
  * Note: this test exposes the a_start bug in the original code.  Without the
  * fix (using exit angle ≈ 0.56 rad instead of current angle π/2), the code
  * inspects channel 37 whose boundaries are outside r_max at the crossing
- * times, and erroneously returns 0 (PASS).  The corrected code uses
- * atan2(p->x, p->z) for WITHIN particles and correctly returns 1 (HIT). */
+ * times, and erroneously returns OUTWARD (PASS).  The corrected code uses
+ * atan2(p->x, p->z) for WITHIN particles and correctly returns INWARD (HIT). */
 void test_collimator_within_tangential_hits(void)
 {
     rfc_collimator_t c = make_collimator(0.5, 1.5, 0.1);
     _class_particle p = make_p(0.8, 0.0, 0.0, 0.0, 0.0, 1000.0);
     double t = 0.0;
-    int hit = rfc_collimator_hit_time(&c, &p, &t);
-    TEST_ASSERT_EQUAL_INT(1, hit);
+    enum rfc_state hit = rfc_collimator_hit_time(&c, &p, &t);
+    TEST_ASSERT_EQUAL_INT(RFC_STATE_INWARD, hit);
     /* Vane crossing is at ≈ 9.9 µs, well before the exit at ≈ 1.27 ms. */
     TEST_ASSERT_TRUE(t > 0.0 && t < 1e-4);
 }
@@ -188,27 +188,27 @@ void test_collimator_within_tangential_hits(void)
  * only ≈ 0.001 m from the axis, far inside the acceptance radius
  * delta_angle × r_min = 0.1 × 0.5 = 0.05 m.
  * The angular drift across the collimator is ≈ 0.001 rad ≪ 0.1 rad.
- * Expected: no vane hit (return 0). */
+ * Expected: OUTWARD (no vane hit). */
 void test_collimator_near_origin_source_passes(void)
 {
     rfc_collimator_t c = make_collimator(0.5, 1.5, 0.1);
     _class_particle p = make_p(0.25, 0.0, 0.0, 1000.0, 0.0, 5.0);
     double t = 0.0;
-    TEST_ASSERT_EQUAL_INT(0, rfc_collimator_hit_time(&c, &p, &t));
+    TEST_ASSERT_EQUAL_INT(RFC_STATE_OUTWARD, rfc_collimator_hit_time(&c, &p, &t));
 }
 
 /* Far-from-origin apparent source: position (0.25, 0, 0), velocity (100, 0, 1000).
  * Tracing the ray back to where x = 0 gives an apparent origin ≈ 2.5 m away
  * in z; the large tangential component drives an angular sweep ≫ delta_angle
  * across the collimator.
- * Expected: vane hit (return 1). */
+ * Expected: INWARD (vane hit in future). */
 void test_collimator_far_origin_source_hits(void)
 {
     rfc_collimator_t c = make_collimator(0.5, 1.5, 0.1);
     _class_particle p = make_p(0.25, 0.0, 0.0, 100.0, 0.0, 1000.0);
     double t = 0.0;
-    int hit = rfc_collimator_hit_time(&c, &p, &t);
-    TEST_ASSERT_EQUAL_INT(1, hit);
+    enum rfc_state hit = rfc_collimator_hit_time(&c, &p, &t);
+    TEST_ASSERT_EQUAL_INT(RFC_STATE_INWARD, hit);
     TEST_ASSERT_TRUE(t > 0.0 && t < 1e30);
 }
 
