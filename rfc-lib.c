@@ -1,4 +1,7 @@
+#ifndef RFC_LIB_H
+// Guard against trying to include the header _after_ McCode's %include directive has inserted this source
 #include "rfc-lib.h"
+#endif
 
 double rfc_cylindrical_surface_intersection_time(const double r2, const rfc_annulus_t * params, const _class_particle * p) {
   const double v_v = p->vx * p->vx + p->vz * p->vz; // v dot v
