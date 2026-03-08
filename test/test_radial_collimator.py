@@ -1,58 +1,25 @@
 from mccode_antlr import Flavor
 from mccode_antlr.assembler import Assembler
 
-from textwrap import dedent
-
-# ---------------------------------------------------------------------------
-# Inline component: a minimal, fully deterministic neutron source.
-# Emits one neutron per event from the origin with a fixed velocity along +z,
-# t=0 and unit weight.
-# ---------------------------------------------------------------------------
-_FLAT_SOURCE_COMP = dedent("""\
-    DEFINE COMPONENT FlatSource
-    SETTING PARAMETERS (xwidth, yheight=0.2, double velocity=1000.0)
-    TRACE
-    %{
-      x = 0; y = 0; z = 0;
-      vx = vx_in; vy = vy_in; vz = velocity;
-      t = 0.0;
-      p = 1.0;
-      SCATTER;
-    %}
-    END
-""")
-
-def _make_registries():
-    from .utilities import repo_registry
-    from mccode_antlr.reader.registry import InMemoryRegistry
-    src_reg = InMemoryRegistry('trivial_src')
-    src_reg.add_comp('FlatSource', _FLAT_SOURCE_COMP)
-    return [src_reg, repo_registry()]
-
 
 def make_test_instrument():
-    from mccode_antlr.common.expression import Expr, Value, ObjectType, DataType, ShapeType, BinaryOp, OpStyle
-    r = Assembler("test_instrument", registries=_make_registries(), flavor=Flavor.MCSTAS)
+    from textwrap import dedent
+    from mccode_antlr.common.expression import Expr
+    from .utilities import repo_registry, write_init_switch
+    r = Assembler("test_instrument", registries=[repo_registry()], flavor=Flavor.MCSTAS)
     
     r.parameter("int collimator=1")
     r.parameter('string powder="Na2Ca3Al2F14.laz"')
 
-    collimator = Value("collimator", DataType.int, ObjectType.parameter, ShapeType.scalar)
-
     def make_collimator_expr(value: int) -> Expr:
-        return f'{collimator:p} == {value}'
+        return Expr.parameter('collimator').eq(value)
     
-    r.initialize(dedent("""\
-        printf("\\nTest_Collimator_Radial: ");
-        switch (collimator) {
-        case 1:
-            printf("Using Collimator_Radial\\n"); break;
-        case 2:
-            printf("Using Collimator_ROC\\n"); break;
-        case 3:
-            printf("Using Exact_radial_coll\\n"); break;
-        }
-    """))
+    write_init_switch(r, "collimator", {
+        1: "Using Collimator_Radial",
+        2: "Using Collimator_ROC",
+        3: "Using Exact_radial_coll",
+        4: "Using Radial_filter_collimator",
+    })
 
     r.component('origin', 'Progress_bar', at=([0, 0, 0], 'ABSOLUTE'),)
 
@@ -76,20 +43,26 @@ def make_test_instrument():
         'filename': '"banana_theta_in.dat"',
     })
 
-    r.component('collimador_rad', 'Collimator_radial', at=([0, 0, 0], 'sample'), parameters={
+    r.component('radial', 'Collimator_radial', at=([0, 0, 0], 'sample'), parameters={
         'nslit': 'ceil((130-2)/0.42)', 'radius': 0.324, 'length': 0.419-0.324, 'yheight': 0.09,
         'theta_min': -160, 'theta_max': 160, 'roc': 0,
     }).WHEN(make_collimator_expr(1))
 
-    r.component('collimador_d20', 'Collimator_ROC', at=([0, 0, 0], 'sample'), parameters={
+    r.component('d20', 'Collimator_ROC', at=([0, 0, 0], 'sample'), parameters={
         'ROC_pitch': 0.42, 'ROC_ri': 0.324, 'ROC_ro': 0.419, 'ROC_h': 0.09, 'ROC_ttmin': -160,
         'ROC_ttmax': 160, 'ROC_sign': -1,
     }).WHEN(make_collimator_expr(2))
 
-    r.component('collimador_contrib', 'Exact_radial_coll', at=([0, 0, 0], 'sample'), parameters={
+    r.component('exact', 'Exact_radial_coll', at=([0, 0, 0], 'sample'), parameters={
         'nslit': 'ceil(130-2/0.42)', 'radius': 0.324, 'length': 0.419-0.324, 'h_in': 0.09,
         'h_out': 0.09, 'theta_min': -160, 'theta_max': 160,
     }).WHEN(make_collimator_expr(3))
+
+    r.component('filter', 'Radial_filter_collimator', at=([0, 0, 0], 'sample'), parameters={
+        'cfg': '""',  # vacuum
+        'angle_minimum': -160, 'angle_maximum': 160, 'yheight': 0.09, 
+        'minimum_radius': 0.324, 'maximum_radius': 0.419, 'collimation': 0.42,
+    }).WHEN(make_collimator_expr(4))
 
     r.component('banana_theta', 'Monitor_nD', at=([0, 0, 0], 'sample'), parameters={
         'options': '"banana, angle limits=[2 160], bins=1280"', 'radius': 1.5, 'yheight': 0.09,
@@ -98,23 +71,32 @@ def make_test_instrument():
     return r.instrument
 
 
+
 def test_collimators_are_similar():
     """Test that the three collimator components give similar results for a simple
     instrument geometry."""
-    from .utilities import compile_and_run
-    from numpy import allclose
+    from .utilities import compile_and_scan, acceptable_total_counts
 
     instr = make_test_instrument()
-    results = {}
-    for collimator in [1, 2, 3]:
-        output, datafiles = compile_and_run(
-            instr, 
-            f'-n 1000000 --seed=1 collimator={collimator}', 
-            # use_temp_dir=False
-            )
-        results[collimator] = datafiles
+    banana_theta = {}
+    collimators = {
+        "Collimator_Radial": 1.52649e-08, 
+        "Collimator_ROC": 1.41509e-08, 
+        "Exact_radial_coll": 1.581e-08,
+        "Radial_filter_collimator": 1.42e-08,
+    }
+    res_dict = compile_and_scan(instr, dict(collimator="1,2,3,4"), ncount=2e6, seed=1)
 
-    banana_theta = {i: results[i]['banana_theta'] for i in range(1, 4)}
+    colnames = list(collimators.keys())
+    banana_theta = {colnames[i]: v['banana_theta'] for i, v in enumerate(res_dict['scan_result'])}
+    # totals = {k: sum(v['I']) for k, v in banana_theta.items()}
+
+    for k, v in banana_theta.items():
+        assert acceptable_total_counts(v, collimators[k]), (
+            f"Total counts for {k} differ from expected by more than 10%: "
+            f"{v['I'].sum()} vs {collimators[k]}"
+        )
+
 
     # # Compare the three banana_theta histograms pairwise.
     # for i in range(1, 4):

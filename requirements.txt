@@ -1,4 +1,4 @@
-mccode-antlr >= 0.18.7
+mccode-antlr >= 0.18.9
 ncrystal
 gitpython
 pytest

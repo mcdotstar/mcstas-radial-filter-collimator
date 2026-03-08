@@ -131,8 +131,8 @@ def test_component_compiles():
     )
 
     instr = assembler.instrument
-    output, _ = compile_and_run(instr, '--ncount=10 --seed=1')
-    assert b'rfc_test_start' in output
+    results = compile_and_run(instr, ncount=10, seed=1)
+    assert b'rfc_test_start' in results['output']
 
 
 @compiled
@@ -181,8 +181,8 @@ def test_neutron_passes_when_outside_geometry():
     """))
 
     instr = assembler.instrument
-    output, _ = compile_and_run(instr, '--ncount=1 --seed=1')
-    text = output.decode(errors='replace')
+    results = compile_and_run(instr, ncount=1, seed=1)
+    text = results['output'].decode(errors='replace')
     assert 'rfc_passthrough_start' in text, (
         f"Sentinel missing from output:\n{text}"
     )
@@ -233,8 +233,8 @@ def test_collimator_blocks_neutrons():
     )
 
     instr = assembler.instrument
-    output, _ = compile_and_run(instr, '--ncount=1 --seed=1')
-    text = output.decode(errors='replace')
+    results = compile_and_run(instr, ncount=1, seed=1)
+    text = results['output'].decode(errors='replace')
     assert 'rfc_collimator_start' in text, (
         f"Sentinel missing from output:\n{text}"
     )

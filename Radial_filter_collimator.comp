@@ -68,10 +68,11 @@ SHARE
     } while (0)
 #endif
 
-static int ncsample_reported_version = 0;
+static int radial_filter_collimator_ncrystal_reported_version = 0;
 
 // Keep all instance-specific parameters on a few structs:
 typedef struct {
+  int is_vacuum;
   double density_factor;
   double inv_density_factor;
   ncrystal_scatter_t scat;
@@ -92,6 +93,25 @@ typedef struct {
   double fil_min2; // minimum filter radius^2
   double fil_max2; // maximum filter radius^2
 } radial_filter_collimator_t;
+
+void radial_filter_print_params (radial_filter_collimator_t* params) {
+  printf ("Radial_filter_collimator parameters:\n");
+  printf ( "  is_vacuum: %d\n", params->is_vacuum);
+  printf ("  density_factor: %e\n", params->density_factor);
+  printf ("  inv_density_factor: %e\n", params->inv_density_factor);
+  printf ("  proc_scat_isoriented: %d\n", params->proc_scat_isoriented);
+  printf ("  absorption mode: %d\n", params->absmode);
+
+  printf ("  y_min: %f\n", params->y_min);
+  printf ("  y_max: %f\n", params->y_max);
+  printf ("  ang_min: %f deg\n", params->ang_min * RAD2DEG);
+  printf ("  ang_max: %f deg\n", params->ang_max * RAD2DEG);
+  printf ("  col_min: %f\n", params->col_min);
+  printf ("  col_max: %f\n", params->col_max);
+  printf ("  fil_min: %f\n", params->fil_min);
+  printf ("  fil_max: %f\n", params->fil_max);
+  printf ("  col_ang: %f deg\n", params->col_ang * RAD2DEG);
+}
 
 double
 radial_filter_collimator_angle_at (double x, double z, double vx, double vz, double t) {
@@ -249,11 +269,11 @@ INITIALIZE
 if (NCRYSTAL_VERSION != ncrystal_version ()) {
   NCMCERR ("Inconsistency detected between included ncrystal.h and linked NCrystal library!");
 }
-if (ncsample_reported_version != ncrystal_version ()) {
-  if (ncsample_reported_version) {
+if (radial_filter_collimator_ncrystal_reported_version != ncrystal_version ()) {
+  if (radial_filter_collimator_ncrystal_reported_version) {
     NCMCERR ("Inconsistent NCrystal library versions detected - this should normally not be possible!");
   }
-  ncsample_reported_version = ncrystal_version ();
+  radial_filter_collimator_ncrystal_reported_version = ncrystal_version ();
   MPI_MASTER (printf ("NCrystal: McStas sample component(s) are using version %s of the NCrystal library.\n", ncrystal_version_str ()););
 }
 
@@ -309,30 +329,38 @@ ncrystal_setrandgen (rand01);
 ncrystal_setbuiltinrandgen_withseed (mcseed);
 #endif
 
-/* access material info to get number density (natoms/volume): */
-ncrystal_info_t info = ncrystal_create_info (cfg);
-double numberdensity = ncrystal_info_getnumberdensity (info);
-ncrystal_unref (&info);
+if (cfg && cfg[0] != '\0') {
+  /* access material info to get number density (natoms/volume): */
+  ncrystal_info_t info = ncrystal_create_info (cfg);
+  double numberdensity = ncrystal_info_getnumberdensity (info);
+  ncrystal_unref (&info);
 
-// numberdensity is the atomic number density in units of Aa^-3=1e30m^3, and
-// given that we have cross-sections in barn (1e-28m^2) and want to generate
-// distances in meters with -log(R)/(numberdensity*xsect), we get the unit
-// conversion factor of 0.01:
-params.density_factor = -0.01 / numberdensity;
-params.inv_density_factor = -100.0 * numberdensity;
+  // numberdensity is the atomic number density in units of Aa^-3=1e30m^3, and
+  // given that we have cross-sections in barn (1e-28m^2) and want to generate
+  // distances in meters with -log(R)/(numberdensity*xsect), we get the unit
+  // conversion factor of 0.01:
+  params.density_factor = -0.01 / numberdensity;
+  params.inv_density_factor = -100.0 * numberdensity;
 
-// Setup scattering:
-params.scat = ncrystal_create_scatter (cfg);
-params.proc_scat = ncrystal_cast_scat2proc (params.scat);
-params.proc_scat_isoriented = !ncrystal_isnonoriented (params.proc_scat);
-;
+  // Setup scattering:
+  params.scat = ncrystal_create_scatter (cfg);
+  params.proc_scat = ncrystal_cast_scat2proc (params.scat);
+  params.proc_scat_isoriented = !ncrystal_isnonoriented (params.proc_scat);
 
-// Setup absorption:
-if (params.absmode) {
-  params.proc_abs = ncrystal_cast_abs2proc (ncrystal_create_absorption (cfg));
-  if (!ncrystal_isnonoriented (params.proc_abs))
-    NCMCERR ("Encountered oriented NCAbsorption process which is not currently supported by this component.");
+  // Setup absorption:
+  if (params.absmode) {
+    params.proc_abs = ncrystal_cast_abs2proc (ncrystal_create_absorption (cfg));
+    if (!ncrystal_isnonoriented (params.proc_abs))
+      NCMCERR ("Encountered oriented NCAbsorption process which is not currently supported by this component.");
+  }
+  params.is_vacuum = 0;
+} else {
+  // We assume vacuum where there should be material -- likely only for testing
+  params.is_vacuum = 1;
 }
+
+radial_filter_print_params(&params);
+
 %}
 
 TRACE
@@ -340,11 +368,14 @@ TRACE
 /* Handle arbitrary incoming neutron with state vector
    (x,y,z,vx,vy,vz,t,sx,sy,sz,p) */
 
+fprintf(stderr, "Incoming neutron: x=%f, y=%f, z=%f, vx=%f, vy=%f, vz=%f\n", x, y, z, vx, vy, vz);
+
 do {
   /* neutron is outside our surface at this point. First check if it intersects it... */
   double t0, t1;
   double t_col;
-  int filter_intersects = radial_filter_collimator_intersect_filter (&params, &t0, &t1, x, y, z, vx, vy, vz);
+  // Bypass any filter physics if no material information was provided (likely only for testing purposes)
+  int filter_intersects = params.is_vacuum ? 0 : radial_filter_collimator_intersect_filter (&params, &t0, &t1, x, y, z, vx, vy, vz);
   int collimator_intersects = radial_filter_collimator_intersect_collimator (&params, &t_col, x, y, z, vx, vy, vz);
   if (!filter_intersects && !collimator_intersects) {
     // The neutron misses both the filter and the collimator, so we can just ignore it and move on to the next component
@@ -393,7 +424,10 @@ do {
 
       if (!filter_intersects) {
         // The neutron somehow misses the filter while we are inside it, this should not happen for a convex shape, so we report an error:
-        NCMCERR ("Can not propagate to surface from inside volume!");
+        fprintf(stderr, "Why doesn't this make it out? x=%f, y=%f, z=%f, vx=%f, vy=%f, fz=%f, t0=%f, t1=%f\n", x, y, z, vx, vy, vz, t0, t1);
+        ABSORB;
+        break;
+        // NCMCERR ("Can not propagate to surface from inside volume!");
       }
 
       if (timestep > t1 && t1 < t_col) {
@@ -404,7 +438,9 @@ do {
         break; // end stepping inside volume
       }
       if (t_col < timestep) {
+        
         PROP_DT (t_col); // move to the intersection with the collimator vane
+        fprintf(stderr, "Absorbed by collimator vane at x=%f, y=%f, z=%f\n", x, y, z);
         ABSORB;          // and kill the neutron there
         break;           // end stepping inside volume
       }
@@ -415,10 +451,14 @@ do {
       /* perform reaction */
       if (params.absmode == 2 && xsect_abs > rand01 () * xsect_step) {
         /* reaction was full-blooded absorption */
+        fprintf(stderr, "Absorbed by filter at x=%f, y=%f, z=%f\n", x, y, z);
         ABSORB; /* kill track (uses goto to jump out of current loop context)*/
       } else if (params.absmode == 1) {
+        double pold = p;
         /* reaction was scatter and we model absorption by intensity-reduction */
         p *= exp (distance * xsect_abs * params.inv_density_factor);
+
+        fprintf(stderr, "Reduced by filter at x=%f, y=%f, z=%f from p=%f to %f\n", x, y, z, pold, p);
       } else {
         /* reaction was scatter and we do not perform any intensity-reduction */
       }
@@ -472,10 +512,13 @@ do {
 
 FINALLY
 %{
-ncrystal_unref (&params.scat);
-ncrystal_invalidate (&params.proc_scat); // a cast of params.scat, so just invalidate handle don't unref
-if (params.absmode)
-  ncrystal_unref (&params.proc_abs);
+if (params.density_factor > 0){ 
+  // only unref if we actually created a scatter object, otherwise we might unref some random memory which could cause a crash
+  ncrystal_unref (&params.scat);
+  ncrystal_invalidate (&params.proc_scat); // a cast of params.scat, so just invalidate handle don't unref
+  if (params.absmode)
+    ncrystal_unref (&params.proc_abs);
+}
 %}
 
 MCDISPLAY
