@@ -35,5 +35,8 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
+      - name: Pre-fetch data file(s) for mccode-antlr
+        run: mccode-antlr datafile fetch Na2Ca3Al2F14.laz
+
       - name: Test
         run: python -m pytest test/ -s -v
