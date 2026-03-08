@@ -96,14 +96,15 @@ def make_test_instrument():
     radius = Expr.parameter('radius')
     radius.data_type = DataType.float
     zdepth = Expr.parameter('zdepth')
-    angle_width = (2 * pi / 180) * binary_expr(atan2, 'atan2', Expr.float(0.2), 2*radius)  # angle_width = 2*atan(width/(2*radius))
+    angle_width = (2 * 180 / pi) * binary_expr(atan2, 'atan2', Expr.float(0.2), 2*radius)  # angle_width = 2*atan(width/(2*radius))
     angle_width.data_type = DataType.float
     r.component('FilterE', 'Radial_filter_collimator', parameters={
         'yheight': 0.2,
-        'angle_width': angle_width,
+        'filter_angle_width': angle_width,
         'minimum_radius': radius,
         'maximum_radius': radius + zdepth,
-        'collimation': angle_width,
+        'collimator_angle_width': 180.0, # much wider than the filter
+        'collimation': 180.0,
         'cfg': 'NCcfg',
     }, at=([0, 0, 1e-3 - radius], 'L_in'), when=Expr.parameter('filter').eq(3))
 
@@ -131,7 +132,7 @@ def test_filters_are_similar():
         "PowderN": 1868.5,
         "Radial_filter_collimator": 1875.02, # it should be identical to the NCrystal_sample in this configuration
     }
-    results = compile_and_scan(instr, {'filter': '0:3'}, ncount=1e6, seed=1, use_temp_dir=False)
+    results = compile_and_scan(instr, {'filter': '0:3'}, ncount=1e6, seed=1, use_temp_dir=True)
     filternames = list(filters.keys())
     l_out = {filternames[i]: res['L_out'] for i, res in enumerate(results['scan_result'])}
 

@@ -106,7 +106,7 @@ def compile_and_scan(instr, parameters: dict, ncount: int, seed: int = 1, use_te
     from mccode_antlr.run import McStas
 
     sim = McStas(instr)
-    sim.source()
+    # sim.source()
     compile_time, _ = timed_compile(sim, dir=None if use_temp_dir else Path('.'))
     run_time, output_results_list = timed_scan(sim, parameters, ncount=ncount, seed=seed)
     scan_result = [results for output, results in output_results_list]
