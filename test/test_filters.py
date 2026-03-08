@@ -123,8 +123,6 @@ def test_filters_are_similar():
     from .utilities import compile_and_scan, acceptable_total_counts
 
     instr = make_test_instrument()
-    with open("Test_filters.instr", "w") as f:
-        instr.to_file(f)
 
     filters = {
         "Filter_gen": 2183.87,
@@ -137,7 +135,7 @@ def test_filters_are_similar():
     l_out = {filternames[i]: res['L_out'] for i, res in enumerate(results['scan_result'])}
 
     for name, expected in filters.items():
-        assert acceptable_total_counts(l_out[name], expected, tolerance=1.0), (
+        assert acceptable_total_counts(l_out[name], expected), (
             f"Total counts for {name} differ from expected by more than 10%: "
             f"{l_out[name]['I'].sum()} vs {expected}"
         )
