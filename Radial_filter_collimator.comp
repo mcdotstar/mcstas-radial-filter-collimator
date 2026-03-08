@@ -209,8 +209,8 @@ do {
         // get the new interaction time:
         filter_pos = rfc_filter_hit_time (&filter, _particle, &t_fil);
         if (filter_pos == RFC_STATE_OUTWARD){
-            // The neutron somehow exits the filter immediately after entering, 
-            // likely due to floating-point precision issues for neutrons that just barely graze the surface. 
+            // The neutron somehow exits the filter immediately after entering,
+            // likely due to floating-point precision issues for neutrons that just barely graze the surface.
             // We can just ignore it and move on to the next component in this case.
             break;
         }
@@ -295,7 +295,7 @@ do {
         double pold = p;
         /* reaction was scatter and we model absorption by intensity-reduction */
         p *= exp (distance * xsect_abs * filter.material.inv_density_factor);
-      } 
+      }
       //else {
         /* reaction was scatter and we do not perform any intensity-reduction */
       //}
