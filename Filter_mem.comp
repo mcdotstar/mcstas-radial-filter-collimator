@@ -1,0 +1,146 @@
+/*******************************************************************************
+*
+* Component: Filter_mem
+*
+* %I
+* Written by: Gregory S. Tucker
+* Date: 29. March 2026
+* Origin: ESS
+* Version: $Revision$
+* Release:
+*
+* This is a modified variant fo Filter_gen.comp by E. Farhi.
+*
+* %D
+* This component changes the neutron flux (weight) in order to match
+* a reference table in a filename.
+* Typically you may set the neutron flux (source-like), or multiply it
+* using a transmission table (filter-like).
+* The component may be placed after a source, in order to e.g.
+* simulate a real source from a reference table, or used as a filter (BeO)
+* or as a window (Al). The behaviour of the component is
+* specified using the 'options' parameter, or from the filename itself (see below)
+* If the thickness for the transmission data filename D was t0, and a different
+* thickness t1 would be required, then the resulting transmission is:
+*   D^(t1/t0).
+* You may use the 'thickness' and 'scaling' parameter for that purpose.
+*
+* %P
+* INPUT PARAMETERS:
+*
+* distribution      : [1]           the probablity distribution, calculated if not provided *and* cfg is non-NULL
+* count             : [1]           the number of points in the probability distribution
+* cfg               : [str]         an optional NCrystal string to specify the material for transmission calculation, only used if distribution is NULL
+* energy_minimum    : [meV]
+* energy_step       : [meV]
+* wavelength_minimum: [angstrom]
+* wavelength_step   : [angstrom]
+* wavenumber_minimum: [1/angstrom]
+* wavenumber_step   : [1/angstrom]
+* options           : [str]         string that can contain: "set" to define the weights, "multiply" to multiply the weight by factor, "add" to add to current flux, "verbose" to display additional information.
+* xmin              : [m]           dimension of filter
+* xmax              : [m]           dimension of filter
+* ymin              : [m]           dimension of filter
+* ymax              : [m]           dimension of filter
+* xwidth            : [m]           Width/diameter of filter). Overrides xmin,xmax.
+* yheight           : [m]           Height of filter. Overrides ymin,ymax.
+* thickness         : [1|m]         relative thickness. D = D^(thickness).
+* scaling           : [1]           scaling factor. D = D*scaling.
+* verbose           : [1]           Flag to select verbose output.
+*
+* %E
+*******************************************************************************/
+DEFINE COMPONENT Filter_mem
+SETTING PARAMETERS (double* distribution=0, int count=0, string cfg=0, energy_minimum=UNSET, energy_step=UNSET, wavelength_minimum=UNSET, wavelength_step=UNSET, wavenumber_minimum=UNSET, wavenumber_step=UNSET, string options=0, xmin=UNSET, xmax=UNSET, ymin=UNSET, ymax=UNSET, xwidth=UNSET, yheight=UNSET, thickness=1, scaling=1, int verbose=0)
+/* Neutron parameters: (x,y,z,vx,vy,vz,t,sx,sy,sz,p) */
+
+SHARE
+%{
+%include "filter-mem-lib"
+%}
+
+DECLARE
+%{
+  enum filter_mem_type type;
+  enum filter_mem_mode mode;
+  int intersect_check;
+  double independent_min;
+  double independent_step;
+  int distribution_ownership;
+%}
+
+INITIALIZE
+%{
+  mode = FILTER_MEM_MODE_MUL;
+  type = FILTER_MEM_TYPE_UNKNOWN;
+
+  // iff xmin, xmax, ymin, ymax are valid -> intersect_check == 1
+  intersect_check = filter_mem_geometry(xwidth, &xmin, &xmax, yheight, &ymin, &ymax);
+  if (intersect_check < 0){
+    exit(fprintf(stderr, "Filter_mem: %s: Inconsistent geometry information provided -- either give x- and y-dimensions or *none* for all-space", NAME_CURRENT_COMP));
+  }
+  filter_mem_options(energy_minimum, energy_step, wavelength_minimum, wavelength_step, wavenumber_minimum, wavenumber_step, &independent_min, &independent_step, options, &mode, &type, &verbose);
+
+  if (type == FILTER_MEM_TYPE_UNKNOWN){
+    exit(fprintf(stderr, "Filter_mem: %s: Undetermined filter distribution mode [E: %f, %f; L: %f, %f; k: %f, %f]", NAME_CURRENT_COMP, energy_minimum, energy_step, wavelength_minimum, wavelength_step, wavenumber_minimum, wavenumber_step));
+  }
+  distribution_ownership = distribution == NULL ? 1 : 0;
+  if (distribution_ownership){
+    distribution = filter_mem_transmission(type, independent_min, independent_step, count, cfg);
+  }
+%}
+
+TRACE
+%{
+  PROP_Z0;
+  if (!intersect_check || (x>xmin && x<xmax && y>ymin && y<ymax)){
+    double new_p = 1;
+    double X = vx * vx + vy * vy + vz * vz;
+    if (type == FILTER_MEM_TYPE_ENERGY){
+      X = VS2E * X;
+    } else {
+      X = V2K * sqrt(X);
+      if (type == FILTER_MEM_TYPE_WAVELENGTH) X = 2 * PI / X;
+    }
+    if (distribution != NULL) {
+      long Index = (long)floor((X - independent_min)/independent_step);
+      if (0 <= Index && Index < count){
+        new_p = distribution[Index];
+	if (Index + 1 < count){
+	  new_p += (distribution[Index + 1] - new_p) * (X - independent_min - Index * independent_step) / independent_step;
+	}
+      }
+      if (scaling != 1) new_p *= scaling;
+      if (thickness != 1) new_p = pow(new_p, thickness);
+    }
+    if (mode == FILTER_MEM_MODE_MUL) {
+      p *= new_p;
+    }
+    else if (mode == FILTER_MEM_MODE_ADD) {
+      p += new_p;
+    }
+    else {
+      p = new_p;
+    }
+    SCATTER;
+  }
+  else if (intersect_check) ABSORB;
+%}
+
+FINALLY
+%{
+if (distribution_ownership && distribution) free(distribution);
+%}
+
+MCDISPLAY
+%{
+if (intersect_check) {
+  multiline(5, (double)xmin, (double)ymin, 0.0,
+               (double)xmax, (double)ymin, 0.0,
+               (double)xmax, (double)ymax, 0.0,
+               (double)xmin, (double)ymax, 0.0,
+               (double)xmin, (double)ymin, 0.0);
+}
+%}
+
+END

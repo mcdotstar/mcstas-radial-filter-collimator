@@ -61,7 +61,7 @@ def write_init_switch(
 
 
 def acceptable_total_counts(dat, expected, tolerance=0.1):
-    return abs(dat['I'].sum() - expected) <= tolerance * expected
+    return abs(dat['I'].sum().value - expected) <= tolerance * expected
 
 
 
@@ -108,8 +108,8 @@ def compile_and_scan(instr, parameters: dict, ncount: int, seed: int = 1, use_te
     sim = McStas(instr)
     # sim.source()
     compile_time, _ = timed_compile(sim, dir=None if use_temp_dir else Path('.'))
-    run_time, output_results_list = timed_scan(sim, parameters, ncount=ncount, seed=seed)
-    scan_result = [results for output, results in output_results_list]
+    run_time, scan_output = timed_scan(sim, parameters, ncount=ncount, seed=seed)
+    scan_result = list(scan_output)  # list of RunOutput; supports ['monitor_name'] access
 
     return {'compile': compile_time, 'run': run_time, 'scan_result': scan_result}
 
@@ -125,6 +125,7 @@ def compile_and_run(instr, ncount: int, parameters: dict | None = None, seed: in
 
     sim = McStas(instr)
     compile_time, _ = timed_compile(sim, dir=None if use_temp_dir else Path('.'))
-    run_time, (output, results) = timed_run(sim, parameters, ncount=ncount, seed=seed)
-    
-    return {'compile': compile_time, 'run': run_time, 'output': output, 'data': results}
+    run_time, run_output = timed_run(sim, parameters, ncount=ncount, seed=seed)
+    # stdout is a str in the new API; encode to bytes to preserve caller interface
+    stdout_bytes = run_output.stdout.encode() if isinstance(run_output.stdout, str) else run_output.stdout
+    return {'compile': compile_time, 'run': run_time, 'output': stdout_bytes, 'data': run_output.output}

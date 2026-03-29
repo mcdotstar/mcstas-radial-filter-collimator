@@ -40,6 +40,7 @@ def make_test_instrument():
         1: r"Running with NCrystal(cfg=, zdepth=%g,...)\\n",
         2: r"Running with PowderN(reflections=\"Be.laz\", zdepth=%g,...)\\n",
         3: r"Running with Radial_filter_collimator(zdepth=%g,...)\\n",
+        4: r"Running with Filter_mem(cfg=, zdepth=%g,...)\\n",
     }, leadin=dedent("""
         lambda0 = (Lmax+Lmin)/2.0;
         dlambda = (Lmax-Lmin)/2.0;
@@ -108,6 +109,20 @@ def make_test_instrument():
         'cfg': 'NCcfg',
     }, at=([0, 0, 1e-3 - radius], 'L_in'), when=Expr.parameter('filter').eq(3))
 
+
+    wavelength_minimum = Expr.parameter('Lmin')
+    nl = 100*Expr.parameter('nL')
+    wavelength_step = (Expr.parameter('Lmax') - wavelength_minimum) / nl
+    r.component('FilterD', 'Filter_mem', parameters={
+          'yheight': 0.2,
+          'xwidth': 0.2,
+          'thickness': 'zdepth',
+          'cfg': 'NCcfg',
+          'wavelength_minimum': wavelength_minimum,
+          'wavelength_step': wavelength_step,
+          'count': nl + 1,
+    }, at=([0, 0, 1e-3], 'L_in'), when=Expr.parameter('filter').eq(4))
+
     r.component('L_out', 'L_monitor', parameters={
         'nL': 'nL', 
         'xwidth': 0.1, 
@@ -129,8 +144,9 @@ def test_filters_are_similar():
         "NCrystal_sample": 1875.02,
         "PowderN": 1868.5,
         "Radial_filter_collimator": 1875.02, # it should be identical to the NCrystal_sample in this configuration
+        "Filter_mem": 1721.17,
     }
-    results = compile_and_scan(instr, {'filter': '0:3'}, ncount=1e6, seed=1, use_temp_dir=True)
+    results = compile_and_scan(instr, {'filter': '0:4'}, ncount=1e6, seed=1, use_temp_dir=True)
     filternames = list(filters.keys())
     l_out = {filternames[i]: res['L_out'] for i, res in enumerate(results['scan_result'])}
 
