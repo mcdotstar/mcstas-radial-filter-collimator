@@ -72,9 +72,7 @@ int filter_mem_geometry(double width, double * wmin, double * wmax, double heigh
 }
 
 
-double * filter_mem_transmission(enum filter_mem_type type, double independent_min, double independent_step, int independent_count, const char * cfg){
-  int NIC = independent_count;
-
+double * filter_mem_transmission(enum filter_mem_type type, double independent_min, double independent_step, int independent_count, const char * cfg, const double thickness_cm){
   // We need the number density of the configuration-specified material
   ncrystal_info_t info = ncrystal_create_info (cfg);
   double numberdensity = ncrystal_info_getnumberdensity (info);
@@ -88,32 +86,28 @@ double * filter_mem_transmission(enum filter_mem_type type, double independent_m
     exit(1);
   }
 
-  double * transmission = (double *) malloc(NIC * sizeof(double));
+  double * transmission = (double *) malloc(independent_count * sizeof(double));
   if (!transmission) return transmission;
-
-  int NIC1=NIC;
 
   // The cross-section is wavelength|wavenumber|energy dependent.
   // NCrystal uses kinetic-energies in eV -- but calculates this most-naturaly from wavelength in angstrom
   // So first convert everything to wavelength (maintaining specified point-order)
   // Calculate and store the wavlength|wavenumber|energy points:
-  for (int i=0; i<NIC1; ++i){
+  for (int i=0; i<independent_count; ++i){
     transmission[i] = independent_min + (double) i * independent_step;
   }
 
-  int NIC2=NIC1;
   if (type == FILTER_MEM_TYPE_ENERGY){
     // Convert from energy in meV to wavenumber
     double conversion = SE2V * MS2AA; // sqrt(E)[sqrt(meV)] to v[m/s] to k[1/angstrom]
-    for (int i=0; i<NIC2; ++i){
+    for (int i=0; i<independent_count; ++i){
       transmission[i] = sqrt(transmission[i]) * conversion;
     }
     type = FILTER_MEM_TYPE_WAVENUMBER;
   }
-  int NIC3=NIC2;
   if (type == FILTER_MEM_TYPE_WAVENUMBER){
     // Convert from wavenumber to wavelength
-    for (int i=0; i<NIC3; ++i){
+    for (int i=0; i<independent_count; ++i){
       transmission[i] = transmission[i] ? 2 * PI / transmission[i] : INFINITY;
     }
     type = FILTER_MEM_TYPE_WAVELENGTH;
@@ -123,11 +117,10 @@ double * filter_mem_transmission(enum filter_mem_type type, double independent_m
     fprintf(stderr, "Expected conversion of independent variable to wavelength!\n");
     exit(1);
   }
-  // Now actually calculate the per-point cross section and 1m tramsission
+  // Now actually calculate the per-point cross section and 1 cm tramsission
   // The transmission is exp(-numberdensity * crosssection * filterlength)
   // And is the combination of the scattering cross-section and the absorption cross-section.
-  int NIC4=NIC3;
-  for (int i=0; i<NIC4; ++i){
+  for (int i=0; i<independent_count; ++i){
     //
     double ekin = ncrystal_wl2ekin(transmission[i]);
     double sigma_scatter, sigma_absorb;
@@ -136,8 +129,7 @@ double * filter_mem_transmission(enum filter_mem_type type, double independent_m
     // [N] = atom/angstrom^3
     // [sigma] = barn/atom = 10^-28 m^2/atom
     // [N*sigma] = 1/cm
-    // so the transmission through L=1m becomes L=100cm
-    transmission[i] = exp(-numberdensity * (sigma_scatter + sigma_absorb) * 100.0);
+    transmission[i] = exp(-numberdensity * (sigma_scatter + sigma_absorb) * thickness_cm);
   }
 
   return transmission;

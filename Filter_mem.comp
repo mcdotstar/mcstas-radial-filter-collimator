@@ -9,7 +9,7 @@
 * Version: $Revision$
 * Release:
 *
-* This is a modified variant fo Filter_gen.comp by E. Farhi.
+* This is a modified variant of Filter_gen.comp by E. Farhi.
 *
 * %D
 * This component changes the neutron flux (weight) in order to match
@@ -86,7 +86,8 @@ INITIALIZE
   }
   distribution_ownership = distribution == NULL ? 1 : 0;
   if (distribution_ownership){
-    distribution = filter_mem_transmission(type, independent_min, independent_step, count, cfg);
+    distribution = filter_mem_transmission(type, independent_min, independent_step, count, cfg, 100*thickness);
+    thickness = 1;
   }
 %}
 

@@ -46,7 +46,8 @@ int filter_mem_geometry(double width, double * wmin, double * wmax, double heigh
  * \param independent_step The distance between calculated transmission points along the independent variable axis
  * \param independent_count The number of points to calculate along the independent variable axis
  * \param cfg The NCrystal configuration string used to specify the material
+ * \param thickness_cm Filter thickness in cm
  * */
-double * filter_mem_transmission(enum filter_mem_type type, double independent_min, double independent_step, int independent_count, const char * cfg);
+double * filter_mem_transmission(enum filter_mem_type type, double independent_min, double independent_step, int independent_count, const char * cfg, double thickness_cm);
 
 #endif
