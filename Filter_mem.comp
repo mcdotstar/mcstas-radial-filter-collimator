@@ -54,7 +54,6 @@ DEFINE COMPONENT Filter_mem
 SETTING PARAMETERS (double* distribution=0, int count=0, string cfg=0, energy_minimum=UNSET, energy_step=UNSET, wavelength_minimum=UNSET, wavelength_step=UNSET, wavenumber_minimum=UNSET, wavenumber_step=UNSET, string options=0, xmin=UNSET, xmax=UNSET, ymin=UNSET, ymax=UNSET, xwidth=UNSET, yheight=UNSET, thickness=1, scaling=1, int verbose=0)
 /* Neutron parameters: (x,y,z,vx,vy,vz,t,sx,sy,sz,p) */
 DEPENDENCY "@NCRYSTALFLAGS@"
-NOACC
 
 SHARE
 %{
@@ -90,6 +89,12 @@ INITIALIZE
   if (distribution_ownership){
     distribution = filter_mem_transmission(type, independent_min, independent_step, count, cfg, 100*thickness);
     thickness = 1;
+  }
+  /* Push the distribution array to GPU device memory so that TRACE accesses
+   * it from fast on-device memory rather than triggering unified-memory page
+   * faults on every kernel launch. */
+  if (distribution != NULL) {
+#pragma acc update device(distribution[0:count])
   }
 %}
 
