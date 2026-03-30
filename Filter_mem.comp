@@ -28,30 +28,28 @@
 * %P
 * INPUT PARAMETERS:
 *
-* distribution      : [1]           the probablity distribution, calculated if not provided *and* cfg is non-NULL
-* count             : [1]           the number of points in the probability distribution
-* cfg               : [str]         an optional NCrystal string to specify the material for transmission calculation, only used if distribution is NULL
-* energy_minimum    : [meV]
-* energy_step       : [meV]
-* wavelength_minimum: [angstrom]
-* wavelength_step   : [angstrom]
-* wavenumber_minimum: [1/angstrom]
-* wavenumber_step   : [1/angstrom]
-* options           : [str]         string that can contain: "set" to define the weights, "multiply" to multiply the weight by factor, "add" to add to current flux, "verbose" to display additional information.
-* xmin              : [m]           dimension of filter
-* xmax              : [m]           dimension of filter
-* ymin              : [m]           dimension of filter
-* ymax              : [m]           dimension of filter
-* xwidth            : [m]           Width/diameter of filter). Overrides xmin,xmax.
-* yheight           : [m]           Height of filter. Overrides ymin,ymax.
-* thickness         : [1|m]         relative thickness. D = D^(thickness).
-* scaling           : [1]           scaling factor. D = D*scaling.
-* verbose           : [1]           Flag to select verbose output.
+* cfg         : [str]  an optional NCrystal string to specify the material for transmission calculation, only used if distribution is NULL
+* independent : [str]  one of [('E', 'energy')|('L', 'wavelength')|('k', 'wavenumber')] to select indepdendent parameter; 'wavelength' if not present
+* distribution: [1]    the probablity distribution, calculated if not provided *and* cfg is non-NULL
+* count       : [1]    the number of points in the probability distribution
+* minimum     : [?]    the minimum independent parameter value; units determined by the value of `independent`
+* maximum     : [?]    the maximum independent parameter value; units determined by the value of `independent` -- only used if some of (`minimum==UNSET`, `delta==UNSET`, `count==0`) is true.
+* delta       : [?]    the independent parameter step size; units determined by the value of `independent`
+* options     : [str]  string that can contain: "set" to define the weights, "multiply" to multiply the weight by factor, "add" to add to current flux, "verbose" to display additional information.
+* xmin        : [m]    dimension of filter
+* xmax        : [m]    dimension of filter
+* ymin        : [m]    dimension of filter
+* ymax        : [m]    dimension of filter
+* xwidth      : [m]    Width of filter. Overrides xmin,xmax.
+* yheight     : [m]    Height of filter. Overrides ymin,ymax.
+* thickness   : [1|m]  thickness or relative thickness. D = D^(thickness/1cm) if NCrystal is used, or D = D^(relative thickness) for user-provided distributions.
+* scaling     : [1]    scaling factor. D = D*scaling.
+* verbose     : [1]    Flag to select verbose output.
 *
 * %E
 *******************************************************************************/
 DEFINE COMPONENT Filter_mem
-SETTING PARAMETERS (double* distribution=0, int count=0, string cfg=0, energy_minimum=UNSET, energy_step=UNSET, wavelength_minimum=UNSET, wavelength_step=UNSET, wavenumber_minimum=UNSET, wavenumber_step=UNSET, string options=0, xmin=UNSET, xmax=UNSET, ymin=UNSET, ymax=UNSET, xwidth=UNSET, yheight=UNSET, thickness=1, scaling=1, int verbose=0)
+SETTING PARAMETERS (string cfg=0, string independent=0, double* distribution=0, int count=0, minimum=UNSET, maximum=UNSET, delta=UNSET, string options=0, xmin=UNSET, xmax=UNSET, ymin=UNSET, ymax=UNSET, xwidth=UNSET, yheight=UNSET, thickness=1, scaling=1, int verbose=0)
 /* Neutron parameters: (x,y,z,vx,vy,vz,t,sx,sy,sz,p) */
 DEPENDENCY "@NCRYSTALFLAGS@"
 
@@ -64,10 +62,7 @@ DECLARE
 %{
   enum filter_mem_type type;
   enum filter_mem_mode mode;
-  int intersect_check;
-  double independent_min;
-  double independent_step;
-  int distribution_ownership;
+  int incorporeal;
 %}
 
 INITIALIZE
@@ -76,19 +71,25 @@ INITIALIZE
   type = FILTER_MEM_TYPE_UNKNOWN;
 
   // iff xmin, xmax, ymin, ymax are valid -> intersect_check == 1
-  intersect_check = filter_mem_geometry(xwidth, &xmin, &xmax, yheight, &ymin, &ymax);
-  if (intersect_check < 0){
+  incorporeal = filter_mem_geometry(xwidth, &xmin, &xmax, yheight, &ymin, &ymax);
+  if (incorporeal > 1){
     exit(fprintf(stderr, "Filter_mem: %s: Inconsistent geometry information provided -- either give x- and y-dimensions or *none* for all-space", NAME_CURRENT_COMP));
   }
-  filter_mem_options(energy_minimum, energy_step, wavelength_minimum, wavelength_step, wavenumber_minimum, wavenumber_step, &independent_min, &independent_step, options, &mode, &type, &verbose);
+
+  filter_mem_which(independent, &minimum, &maximum, &delta, &count, &type);
+  filter_mem_options(options, &mode, &verbose);
 
   if (type == FILTER_MEM_TYPE_UNKNOWN){
-    exit(fprintf(stderr, "Filter_mem: %s: Undetermined filter distribution mode [E: %f, %f; L: %f, %f; k: %f, %f]", NAME_CURRENT_COMP, energy_minimum, energy_step, wavelength_minimum, wavelength_step, wavenumber_minimum, wavenumber_step));
+    exit(fprintf(stderr, "Filter_mem: %s: Undetermined filter distribution mode from %s\n", NAME_CURRENT_COMP, independent));
   }
-  distribution_ownership = distribution == NULL ? 1 : 0;
-  if (distribution_ownership){
-    distribution = filter_mem_transmission(type, independent_min, independent_step, count, cfg, 100*thickness);
-    thickness = 1;
+  if (distribution == NULL){
+    distribution = filter_mem_transmission(type, minimum, delta, count, cfg);
+    thickness *= 100; // convert from m to cm to match NCrystal calculation
+  }
+  /* Eagerly migrate the distribution array to the GPU so TRACE kernels do not
+   * stall on per-page device faults when running under OpenACC managed memory. */
+  if (distribution != NULL){
+    #pragma acc update device(distribution[0:count])
   }
   /* Push the distribution array to GPU device memory so that TRACE accesses
    * it from fast on-device memory rather than triggering unified-memory page
@@ -101,7 +102,7 @@ INITIALIZE
 TRACE
 %{
   PROP_Z0;
-  if (!intersect_check || (x>xmin && x<xmax && y>ymin && y<ymax)){
+  if (incorporeal || (x>xmin && x<xmax && y>ymin && y<ymax)){
     double new_p = 1;
     double X = vx * vx + vy * vy + vz * vz;
     if (type == FILTER_MEM_TYPE_ENERGY){
@@ -111,11 +112,11 @@ TRACE
       if (type == FILTER_MEM_TYPE_WAVELENGTH) X = 2 * PI / X;
     }
     if (distribution != NULL) {
-      long Index = (long)floor((X - independent_min)/independent_step);
+      long Index = (long)floor((X - minimum)/delta);
       if (0 <= Index && Index < count){
         new_p = distribution[Index];
 	if (Index + 1 < count){
-	  new_p += (distribution[Index + 1] - new_p) * (X - independent_min - Index * independent_step) / independent_step;
+	  new_p += (distribution[Index + 1] - new_p) * (X - minimum - Index * delta) / delta;
 	}
       }
       if (scaling != 1) new_p *= scaling;
@@ -132,17 +133,17 @@ TRACE
     }
     SCATTER;
   }
-  else if (intersect_check) ABSORB;
+  else if (!incorporeal) ABSORB;
 %}
 
 FINALLY
 %{
-if (distribution_ownership && distribution) free(distribution);
+  filter_mem_cache_clear(); // OK if called multiple times in finally
 %}
 
 MCDISPLAY
 %{
-if (intersect_check) {
+if (!incorporeal) {
   multiline(5, (double)xmin, (double)ymin, 0.0,
                (double)xmax, (double)ymin, 0.0,
                (double)xmax, (double)ymax, 0.0,

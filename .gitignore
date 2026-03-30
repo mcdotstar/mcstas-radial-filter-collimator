@@ -16,3 +16,7 @@ htmlcov/
 .nox/
 .pytest_cache/
 .pyre/
+*/.ipynb_checkpoints/
+.ipynb_checkpoints/
+.idea/
+*.sim
