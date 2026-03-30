@@ -86,17 +86,6 @@ INITIALIZE
     distribution = filter_mem_transmission(type, minimum, delta, count, cfg);
     thickness *= 100; // convert from m to cm to match NCrystal calculation
   }
-  /* Eagerly migrate the distribution array to the GPU so TRACE kernels do not
-   * stall on per-page device faults when running under OpenACC managed memory. */
-  if (distribution != NULL){
-    #pragma acc update device(distribution[0:count])
-  }
-  /* Push the distribution array to GPU device memory so that TRACE accesses
-   * it from fast on-device memory rather than triggering unified-memory page
-   * faults on every kernel launch. */
-  if (distribution != NULL) {
-#pragma acc update device(distribution[0:count])
-  }
 %}
 
 TRACE
