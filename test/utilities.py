@@ -103,7 +103,12 @@ def timed_scan(sim, params: dict, ncount: int = 1000, seed: int = 1):
 
 def compile_and_scan(instr, parameters: dict, ncount: int, seed: int = 1, use_temp_dir=True, grid=False, **args):
     """Compile *instr* and run the specified scan"""
+    from mccode_antlr.compiler.check import simple_instr_compiles
     from mccode_antlr.run import McStas
+    import pytest
+
+    if not simple_instr_compiles('cc'):
+        pytest.skip("No working C compiler available")
 
     sim = McStas(instr)
     # sim.source()
@@ -121,7 +126,12 @@ def compile_and_run(instr, ncount: int, parameters: dict | None = None, seed: in
     Returns combined stdout+stderr bytes from the binary.
     A RuntimeError is raised by mccode_antlr on compilation or run failure.
     """
+    from mccode_antlr.compiler.check import simple_instr_compiles
     from mccode_antlr.run import McStas
+    import pytest
+
+    if not simple_instr_compiles('cc'):
+        pytest.skip("No working C compiler available")
 
     sim = McStas(instr)
     compile_time, _ = timed_compile(sim, dir=None if use_temp_dir else Path('.'))
