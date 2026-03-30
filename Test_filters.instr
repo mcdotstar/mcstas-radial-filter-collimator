@@ -1,0 +1,69 @@
+/* Instrument test_filters
+Instrument: test_filters
+Source: interactive
+Contains: 
+Registries: radial_filter_collimator libc mcstas
+Registry: radial_filter_collimator /home/g/Code/mccode/mcstas-radial-filter-collimator
+Registry: libc https://github.com/mccode-dev/McCode v3.5.31 libc-registry.txt https://github.com/mccode-dev/mccode-pooch-registries
+Registry: mcstas https://github.com/mccode-dev/McCode v3.5.31 mcstas-registry.txt https://github.com/mccode-dev/mccode-pooch-registries
+*/
+DEFINE INSTRUMENT test_filters(int filter=1, Lmin=0.5, Lmax=10, int nL=101, zdepth=0.15, T=80, radius=1000.0)
+DECLARE
+%{
+
+
+double lambda0; 
+double dlambda; 
+char NCcfg[128];
+
+%}
+
+INITIALIZE
+%{
+
+
+
+lambda0 = (Lmax+Lmin)/2.0;
+dlambda = (Lmax-Lmin)/2.0;
+sprintf(NCcfg,"Be_sg194.ncmat;temp=%.2gK",T);
+
+        printf("\ntest_filters: ");
+        switch (filter) {
+        case 0:
+    MPI_MASTER( printf("Running with Filter_gen(filename=\"Be.trm\", zdepth=%g,...)\\n, zdepth"); ); break;
+case 1:
+    MPI_MASTER( printf("Running with NCrystal(cfg=, zdepth=%g,...)\\n, zdepth"); ); break;
+case 2:
+    MPI_MASTER( printf("Running with PowderN(reflections=\"Be.laz\", zdepth=%g,...)\\n, zdepth"); ); break;
+case 3:
+    MPI_MASTER( printf("Running with Radial_filter_collimator(zdepth=%g,...)\\n, zdepth"); ); break;
+case 4:
+    MPI_MASTER( printf("Running with Filter_mem(cfg=, zdepth=%g,...)\\n, zdepth"); ); break;
+        default:
+            printf("Invalid filter value: %d\n", filter); 
+            exit(-1);
+            break;
+        }
+
+%}
+
+TRACE
+
+COMPONENT origin = Progress_bar() AT (0, 0, 0) ABSOLUTE  
+
+COMPONENT source_div = Source_div(xwidth=0.1, yheight=0.1, focus_aw=1e-05, focus_ah=1e-05, lambda0=lambda0, dlambda=dlambda, flux=100000000000000.0) AT (0, 0, 0) RELATIVE origin ROTATED (0.0, 0.0, 0.0) RELATIVE origin 
+
+COMPONENT L_in = L_monitor(nL=nL, xwidth=0.1, yheight=0.1, Lmin=Lmin, Lmax=Lmax) AT (0, 0, 0.001) RELATIVE source_div ROTATED (0.0, 0.0, 0.0) RELATIVE source_div 
+
+COMPONENT FilterA = Filter_gen(filename="Be.trm", xwidth=0.2, yheight=0.2, thickness=zdepth) WHEN filter==0 AT (0, 0, 0.001) RELATIVE L_in ROTATED (0.0, 0.0, 0.0) RELATIVE L_in 
+
+CPU COMPONENT FilterB = NCrystal_sample(yheight=0.2, xwidth=0.2, zdepth=zdepth, cfg=NCcfg) WHEN filter==1 AT (0, 0, 0.001) RELATIVE L_in ROTATED (0.0, 0.0, 0.0) RELATIVE L_in 
+
+COMPONENT FilterC = PowderN(yheight=0.2, xwidth=0.2, zdepth=zdepth, reflections="Be.laz") WHEN filter==2 AT (0, 0, 0.001) RELATIVE L_in ROTATED (0.0, 0.0, 0.0) RELATIVE L_in 
+
+CPU COMPONENT FilterE = Radial_filter_collimator(yheight=0.2, filter_angle_width=114.59155902616465*atan2(0.2, 2*radius), minimum_radius=radius, maximum_radius=radius + zdepth, collimator_angle_width=180.0, collimation=180.0, cfg=NCcfg) WHEN filter==3 AT (0, 0, 0.001 - radius) RELATIVE L_in ROTATED (0.0, 0.0, 0.0) RELATIVE L_in 
+
+COMPONENT FilterD = Filter_mem(yheight=0.2, xwidth=0.2, thickness=zdepth, cfg=NCcfg, independent="wavelength", minimum=Lmin, delta=(1.0/100.0)*(Lmax - Lmin)/nL, count=100*nL + 1) WHEN filter==4 AT (0, 0, 0.001) RELATIVE L_in ROTATED (0.0, 0.0, 0.0) RELATIVE L_in 
+
+COMPONENT L_out = L_monitor(nL=nL, xwidth=0.1, yheight=0.1, Lmin=Lmin, Lmax=Lmax) AT (0, 0, zdepth + 0.001) RELATIVE FilterA ROTATED (0.0, 0.0, 0.0) RELATIVE FilterA 
+END
