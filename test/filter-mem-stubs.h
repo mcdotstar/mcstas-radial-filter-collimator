@@ -1,22 +1,27 @@
-/* fgm-stubs.h – Standalone stubs for McCode runtime helpers used by fgm-lib.
+/* filter-mem-stubs.h – Standalone stubs for McCode runtime helpers used by
+ * filter-mem-lib (formerly fgm-lib).
  *
- * Include this (or force-include it via -include) BEFORE fgm-lib.h so that
- * the #ifndef MCSTAS guard in that header skips its conflicting declarations
- * and our macro/inline implementations take effect instead.
+ * Include this (or force-include it via -include) BEFORE filter-mem-lib.h so
+ * that the #ifndef MCSTAS guard in that header skips its conflicting
+ * declarations and our macro/inline implementations take effect instead.
+ *
+ * filter-mem-lib uses the explicit-count calling convention:
+ *   all_unset(6, emin, estep, lmin, lstep, kmin, kstep)
+ * The pass-through macros below forward the arguments unchanged, so the
+ * explicit count is passed directly to the variadic helper functions.
  *
  * Provides:
  *   UNSET            – the sentinel quiet-NaN used for "parameter not set"
  *   nans_match       – bitwise comparison of two NaN payloads
  *   is_unset / is_set / is_valid
- *   all_unset / all_set / any_unset / any_set – variadic macros (1–8 args)
- *   SE2V, MS2AA, PI  – McCode physical constants needed to compile
- *                      fgm_ncrystal_transmission
+ *   all_unset / all_set / any_unset / any_set – variadic macros (explicit count)
+ *   SE2V, MS2AA, PI  – McCode physical constants
  */
 
-#ifndef FGM_STUBS_H
-#define FGM_STUBS_H
+#ifndef FILTER_MEM_STUBS_H
+#define FILTER_MEM_STUBS_H
 
-/* Tell fgm-lib.h that we are supplying the helper symbols ourselves. */
+/* Tell filter-mem-lib.h that we are supplying the helper symbols ourselves. */
 #ifndef MCSTAS
 #  define MCSTAS
 #endif
@@ -90,19 +95,14 @@ static inline int _fgm_any_set(int n, ...) {
     return 0;
 }
 
-/* ---- Argument-counting macros (supports 1–8 arguments) ---- */
-
-#define _FGM_NARG(_1,_2,_3,_4,_5,_6,_7,_8,N,...) N
-#define _FGM_COUNT(...) _FGM_NARG(__VA_ARGS__,8,7,6,5,4,3,2,1)
-
-/* ---- Public variadic macros matching McCode calling convention ---- */
+/* ---- Public variadic macros (pass-through; caller supplies count) ---- */
 
 #define all_unset(...) _fgm_all_unset(__VA_ARGS__)
 #define all_set(...)   _fgm_all_set(__VA_ARGS__)
 #define any_unset(...) _fgm_any_unset(__VA_ARGS__)
 #define any_set(...)   _fgm_any_set(__VA_ARGS__)
 
-/* ---- McCode physical constants used in fgm_ncrystal_transmission ---- */
+/* ---- McCode physical constants ---- */
 
 #ifndef SE2V
 #  define SE2V 437.393377   /* sqrt(meV) → m/s  (sqrt(2e/m_n), e in meV) */
@@ -114,4 +114,4 @@ static inline int _fgm_any_set(int n, ...) {
 #  define PI M_PI
 #endif
 
-#endif /* FGM_STUBS_H */
+#endif /* FILTER_MEM_STUBS_H */

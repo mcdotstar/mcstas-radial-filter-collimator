@@ -118,8 +118,9 @@ def make_test_instrument():
           'xwidth': 0.2,
           'thickness': 'zdepth',
           'cfg': 'NCcfg',
-          'wavelength_minimum': wavelength_minimum,
-          'wavelength_step': wavelength_step,
+          'independent': '"wavelength"',
+          'minimum': wavelength_minimum,
+          'delta': wavelength_step,
           'count': nl + 1,
     }, at=([0, 0, 1e-3], 'L_in'), when=Expr.parameter('filter').eq(4))
 
