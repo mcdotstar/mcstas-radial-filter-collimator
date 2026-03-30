@@ -2,10 +2,10 @@
 Instrument: test_filters
 Source: interactive
 Contains: 
-Registries: radial_filter_collimator libc mcstas
+Registries: radial_filter_collimator mcstas libc
 Registry: radial_filter_collimator /home/g/Code/mccode/mcstas-radial-filter-collimator
-Registry: libc https://github.com/mccode-dev/McCode v3.5.31 libc-registry.txt https://github.com/mccode-dev/mccode-pooch-registries
 Registry: mcstas https://github.com/mccode-dev/McCode v3.5.31 mcstas-registry.txt https://github.com/mccode-dev/mccode-pooch-registries
+Registry: libc https://github.com/mccode-dev/McCode v3.5.31 libc-registry.txt https://github.com/mccode-dev/mccode-pooch-registries
 */
 DEFINE INSTRUMENT test_filters(int filter=1, Lmin=0.5, Lmax=10, int nL=101, zdepth=0.15, T=80, radius=1000.0)
 DECLARE

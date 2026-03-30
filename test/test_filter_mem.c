@@ -81,7 +81,7 @@ void test_different_cfg_returns_different_pointer(void) {
 #endif
 }
 
-/* ---- cache-clear: re-allocation after clear ---- */
+/* ---- cache-clear: cache is repopulated correctly after clear ---- */
 
 void test_clear_causes_reallocation(void) {
 #ifdef FILTER_MEM_TEST_SKIP_NCRYSTAL
@@ -91,10 +91,13 @@ void test_clear_causes_reallocation(void) {
     double *p1 = filter_mem_transmission(FILTER_MEM_TYPE_WAVELENGTH, 0.5, 0.01, 100, cfg);
     TEST_ASSERT_NOT_NULL(p1);
     filter_mem_cache_clear();
+    /* After clear the cache is empty; the first call is a miss (new allocation),
+     * the second must be a hit (same pointer) — regardless of whether the
+     * allocator happens to reuse the same address as p1. */
     double *p2 = filter_mem_transmission(FILTER_MEM_TYPE_WAVELENGTH, 0.5, 0.01, 100, cfg);
+    double *p3 = filter_mem_transmission(FILTER_MEM_TYPE_WAVELENGTH, 0.5, 0.01, 100, cfg);
     TEST_ASSERT_NOT_NULL(p2);
-    /* A fresh allocation must differ from the freed pointer. */
-    TEST_ASSERT_NOT_EQUAL(p1, p2);
+    TEST_ASSERT_EQUAL_PTR(p2, p3);
 #endif
 }
 
