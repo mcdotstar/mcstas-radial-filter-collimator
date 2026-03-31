@@ -1,0 +1,199 @@
+/*******************************************************************************
+*
+* Component: Filter_sample
+*
+* %I
+* Written by: Gregory Tucker (based on NCrystal_sample by NCrystal developers)
+* Date: 2026
+* Origin: European Spallation Source ERIC
+*
+* Sample component using Beer-Lambert attenuation from the filter-mem cache
+*
+* %D
+* Sample component that attenuates neutron weight using a pre-computed (or
+* automatically derived) 1-cm transmission table, without simulating
+* individual scattering events.  The weight reduction is:
+*   p *= T_1cm ^ path_cm
+* where T_1cm is the linearly-interpolated 1-cm transmission at the neutron's
+* current energy/wavelength/wavenumber, and path_cm is the straight-line
+* geometric path through the sample volume in centimetres.  The neutron
+* direction is never changed.
+* Supported sample shapes: box (xwidth × yheight × zdepth),
+* cylinder (radius × yheight), sphere (radius).
+* The transmission table is shared across all Filter_sample, Filter_mem, and
+* Radial_col_filter components in the same simulation that use the same
+* NCrystal cfg-string and axis parameters.  The cache is freed automatically
+* at simulation shutdown via FINALLY.
+*
+* %P
+* INPUT PARAMETERS:
+*
+* cfg        : [str]  NCrystal material configuration string used to compute the 1-cm transmission table. Defaults to Beryllium at 77K. If not set, the sample is transparent (only geometry is active).
+* independent: [str]  One of [('E','energy')|('L','wavelength')|('k','wavenumber')]. Default: 'wavelength'.
+* count      : [1]    Number of points in the transmission table.
+* minimum    : [?]    Minimum value of the independent axis; units depend on independent.
+* maximum    : [?]    Maximum value of the independent axis; units depend on independent.
+* delta      : [?]    Step size of the independent axis; units depend on independent.
+* verbose    : [1]    Print extra diagnostic information during INITIALIZE if non-zero.
+* xwidth     : [m]    x-dimension (width) of sample, if box shape is desired.
+* yheight    : [m]    y-dimension (height) of sample, if box or cylinder shape is desired.
+* zdepth     : [m]    z-dimension (depth) of sample, if box shape is desired.
+* radius     : [m]    radius of sample, if sphere or cylinder shape is desired.
+*
+* %E
+*******************************************************************************/
+DEFINE COMPONENT Filter_sample
+SETTING PARAMETERS (string cfg="Be_sg194.ncmat;temp=77K", string independent=0, int count=0, minimum=UNSET, maximum=UNSET, delta=UNSET, int verbose=0, xwidth=0, yheight=0, zdepth=0, radius=0)
+DEPENDENCY "@NCRYSTALFLAGS@"
+
+SHARE
+%{
+#ifndef FILTERSAMPLE_GEOM_DEFINED
+#define FILTERSAMPLE_GEOM_DEFINED
+
+  typedef enum { FS_BOX, FS_SPHERE, FS_CYLINDER } fs_shapetype;
+
+  typedef struct {
+    fs_shapetype shape;
+    double dx, dy, dz, rradius;
+  } fs_geom_t;
+
+  void fs_geom_init(fs_geom_t *geom, const char *comp, double xw, double yh, double zd, double r)
+  {
+    int isbox    = (xw > 0 && yh > 0 && zd > 0);
+    int iscyl    = (yh > 0 && r  > 0);
+    int issphere = (!iscyl && r > 0);
+    int n = (isbox ? 1 : 0) + (iscyl ? 1 : 0) + (issphere ? 1 : 0);
+    if (n == 0) {
+      fprintf(stderr, "\nFilter_sample: %s: ERROR: must specify parameters to define shape\n\n", comp);
+      exit(1);
+    }
+    if (n > 1 || (iscyl && (xw > 0 || zd > 0)) || (issphere && (xw > 0 || yh > 0 || zd > 0))) {
+      fprintf(stderr, "\nFilter_sample: %s: ERROR: conflicting shape parameters (pick box, cylinder, or sphere)\n\n", comp);
+      exit(1);
+    }
+    if (isbox) {
+      geom->shape = FS_BOX; geom->dx = xw; geom->dy = yh; geom->dz = zd; geom->rradius = 0;
+    } else if (iscyl) {
+      geom->shape = FS_CYLINDER; geom->dx = 0; geom->dy = yh; geom->dz = 0; geom->rradius = r;
+    } else {
+      geom->shape = FS_SPHERE; geom->dx = 0; geom->dy = 0; geom->dz = 0; geom->rradius = r;
+    }
+  }
+
+  int fs_geom_intersect(fs_geom_t *geom, double *t0, double *t1,
+                        double x, double y, double z, double vx, double vy, double vz)
+  {
+    switch (geom->shape) {
+      case FS_CYLINDER: return cylinder_intersect(t0, t1, x, y, z, vx, vy, vz, geom->rradius, geom->dy);
+      case FS_BOX:      return box_intersect(t0, t1, x, y, z, vx, vy, vz, geom->dx, geom->dy, geom->dz);
+      case FS_SPHERE:   return sphere_intersect(t0, t1, x, y, z, vx, vy, vz, geom->rradius);
+    }
+    return 0;
+  }
+
+#endif /* FILTERSAMPLE_GEOM_DEFINED */
+
+%include "filter-mem-lib"
+%}
+
+DECLARE
+%{
+  fs_geom_t geoparams;
+  enum filter_mem_type type;
+  double* distribution;
+%}
+
+INITIALIZE
+%{
+  memset(&geoparams, 0, sizeof(geoparams));
+  fs_geom_init(&geoparams, NAME_CURRENT_COMP, xwidth, yheight, zdepth, radius);
+
+  distribution = NULL;
+  filter_mem_which(independent, &minimum, &maximum, &delta, &count, &type);
+
+  if (type == FILTER_MEM_TYPE_UNKNOWN) {
+    exit(fprintf(stderr, "Filter_sample: %s: undetermined distribution mode from '%s'\n",
+                 NAME_CURRENT_COMP, independent ? independent : "(null)"));
+  }
+
+  if (cfg != NULL && cfg[0] != '\0') {
+    distribution = filter_mem_transmission(type, minimum, delta, count, cfg);
+  }
+  /* cfg == NULL → no attenuation; sample acts as a transparent geometry marker */
+
+  /* Eagerly push transmission table to GPU device memory. */
+  if (distribution != NULL) {
+#pragma acc update device(distribution[0:count])
+  }
+%}
+
+TRACE
+%{
+  do {
+    double t0, t1;
+    if (!fs_geom_intersect(&geoparams, &t0, &t1, x, y, z, vx, vy, vz))
+      break; /* misses sample */
+
+    if (t0 > 0)
+      PROP_DT(t0); /* propagate to entry surface */
+
+    /* Get exit time from current (inside) position */
+    if (!fs_geom_intersect(&geoparams, &t0, &t1, x, y, z, vx, vy, vz))
+      break; /* shouldn't happen for a convex body */
+
+    double absv    = sqrt(vx * vx + vy * vy + vz * vz);
+    double path_cm = t1 * absv * 100.0;
+
+    if (distribution != NULL) {
+      double X = vx * vx + vy * vy + vz * vz;
+      if (type == FILTER_MEM_TYPE_ENERGY) {
+        X = VS2E * X;
+      } else {
+        X = V2K * sqrt(X);
+        if (type == FILTER_MEM_TYPE_WAVELENGTH) X = 2 * PI / X;
+      }
+
+      long Index = (long)floor((X - minimum) / delta);
+      if (0 <= Index && Index < count) {
+        double T1 = distribution[Index];
+        if (Index + 1 < count) {
+          T1 += (distribution[Index + 1] - T1) * (X - minimum - Index * delta) / delta;
+        }
+        p *= pow(T1, path_cm);
+      }
+    }
+
+    PROP_DT(t1);
+    SCATTER;
+  } while (0);
+%}
+
+FINALLY
+%{
+  filter_mem_cache_clear(); /* idempotent: safe to call from multiple component instances */
+%}
+
+MCDISPLAY
+%{
+  switch (geoparams.shape) {
+  case FS_CYLINDER:
+    mcdis_circle("xz", 0,  geoparams.dy/2.0, 0, geoparams.rradius);
+    mcdis_circle("xz", 0, -geoparams.dy/2.0, 0, geoparams.rradius);
+    mcdis_line(-geoparams.rradius, -geoparams.dy/2.0, 0, -geoparams.rradius, +geoparams.dy/2.0, 0);
+    mcdis_line(+geoparams.rradius, -geoparams.dy/2.0, 0, +geoparams.rradius, +geoparams.dy/2.0, 0);
+    mcdis_line(0, -geoparams.dy/2.0, -geoparams.rradius, 0, +geoparams.dy/2.0, -geoparams.rradius);
+    mcdis_line(0, -geoparams.dy/2.0, +geoparams.rradius, 0, +geoparams.dy/2.0, +geoparams.rradius);
+    break;
+  case FS_BOX:
+    mcdis_box(0., 0., 0., geoparams.dx, geoparams.dy, geoparams.dz, 0, 0, 1, 0);
+    break;
+  case FS_SPHERE:
+    mcdis_circle("xy", 0., 0., 0., geoparams.rradius);
+    mcdis_circle("xz", 0., 0., 0., geoparams.rradius);
+    mcdis_circle("yz", 0., 0., 0., geoparams.rradius);
+    break;
+  }
+%}
+
+END
