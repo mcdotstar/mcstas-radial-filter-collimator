@@ -29,7 +29,7 @@
 * INPUT PARAMETERS:
 *
 * cfg        : [str]  NCrystal material configuration string used to compute the 1-cm transmission table. Defaults to Beryllium at 77K. If not set, the sample is transparent (only geometry is active).
-* independent: [str]  One of [('E','energy')|('L','wavelength')|('k','wavenumber')]. Default: 'wavelength'.
+* independent: [str]  one of [("E", "energy")|("L", "wavelength")|("k", "wavenumber")] to select indepdendent parameter; "wavelength" if not present
 * count      : [1]    Number of points in the transmission table.
 * minimum    : [?]    Minimum value of the independent axis; units depend on independent.
 * maximum    : [?]    Maximum value of the independent axis; units depend on independent.
@@ -121,11 +121,6 @@ INITIALIZE
     distribution = filter_mem_transmission(type, minimum, delta, count, cfg);
   }
   /* cfg == NULL → no attenuation; sample acts as a transparent geometry marker */
-
-  /* Eagerly push transmission table to GPU device memory. */
-  if (distribution != NULL) {
-#pragma acc update device(distribution[0:count])
-  }
 %}
 
 TRACE

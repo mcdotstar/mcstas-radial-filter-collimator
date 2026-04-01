@@ -29,7 +29,7 @@
 * INPUT PARAMETERS:
 *
 * cfg         : [str]  an optional NCrystal string to specify the material for transmission calculation, only used if distribution is NULL
-* independent : [str]  one of [('E', 'energy')|('L', 'wavelength')|('k', 'wavenumber')] to select indepdendent parameter; 'wavelength' if not present
+* independent : [str]  one of [("E", "energy")|("L", "wavelength")|("k", "wavenumber")] to select indepdendent parameter; "wavelength" if not present
 * distribution: [1]    the probablity distribution, calculated if not provided *and* cfg is non-NULL
 * count       : [1]    the number of points in the probability distribution
 * minimum     : [?]    the minimum independent parameter value; units determined by the value of `independent`
@@ -85,17 +85,6 @@ INITIALIZE
   if (distribution == NULL){
     distribution = filter_mem_transmission(type, minimum, delta, count, cfg);
     thickness *= 100; // convert from m to cm to match NCrystal calculation
-  }
-  /* Eagerly migrate the distribution array to the GPU so TRACE kernels do not
-   * stall on per-page device faults when running under OpenACC managed memory. */
-  if (distribution != NULL){
-    #pragma acc update device(distribution[0:count])
-  }
-  /* Push the distribution array to GPU device memory so that TRACE accesses
-   * it from fast on-device memory rather than triggering unified-memory page
-   * faults on every kernel launch. */
-  if (distribution != NULL) {
-#pragma acc update device(distribution[0:count])
   }
 %}
 
