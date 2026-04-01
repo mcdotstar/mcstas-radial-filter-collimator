@@ -35,7 +35,7 @@
 * INPUT PARAMETERS:
 *
 * cfg                      : [str]  NCrystal material configuration string (default: Be at 77K). Used to compute the 1-cm transmission table if distribution is not supplied.
-* independent              : [str]  One of [('E','energy')|('L','wavelength')|('k','wavenumber')]. Selects the independent axis of the transmission table. Default: 'wavelength'.
+* independent              : [str]  one of [("E", "energy")|("L", "wavelength")|("k", "wavenumber")] to select indepdendent parameter; "wavelength" if not present
 * count                    : [1]    Number of points in the transmission table.
 * minimum                  : [?]    Minimum value of the independent axis; units depend on independent.
 * maximum                  : [?]    Maximum value of the independent axis; units depend on independent. Only used to resolve count or delta when those are not set.
@@ -125,12 +125,6 @@ INITIALIZE
   }
 
   distribution = filter_mem_transmission (type, minimum, delta, count, cfg);
-
-  /* Eagerly migrate the transmission table to the GPU so TRACE kernels do not
-   * stall on per-page device faults when running under OpenACC managed memory. */
-  if (distribution != NULL) {
-#pragma acc update device(distribution[0:count])
-  }
 %}
 
 TRACE
