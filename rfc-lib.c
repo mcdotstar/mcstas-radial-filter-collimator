@@ -159,8 +159,10 @@ enum rfc_state rfc_collimator_hit_time(const rfc_collimator_t * collimator, cons
 
   const double entry_channel = floor((a_start - collimator->volume.a_min) / collimator->delta_angle);
   if (collimator->volume.a_min + entry_channel * collimator->delta_angle == a_start) {
+    /* 
     printf("Warning: particle from x=(%f, %f, %f) v=(%f, %f, %f) is exactly on the boundary between two channels at time t=%g\n",
       p->x, p->y, p->z, p->vx, p->vy, p->vz, *t);
+    */
     // exactly on the boundary between two channels at time t, which is a vane -> hit
     return RFC_STATE_WITHIN;
   }
